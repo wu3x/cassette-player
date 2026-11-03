@@ -436,7 +436,26 @@ function setPlaying(v){isPlaying=v;deck.classList.toggle('playing',v);$('icPlay'
 function loadYouTube(id){ytId=id;document.getElementById('yt-holder').style.display='block';if(!window.YT?.Player){if(!document.getElementById('yt-api')){const sc=document.createElement('script');sc.id='yt-api';sc.src='https://www.youtube.com/iframe_api';document.head.append(sc);}return;}if(youtubePlayer?.loadVideoById){youtubePlayer.cueVideoById(id);return;}youtubePlayer=new YT.Player('yt-holder',{width:210,height:118,videoId:id,playerVars:{playsinline:1,controls:1,autoplay:0,origin:location.origin},events:{onReady(){youtubeReady=true;paint();},onStateChange(e){setPlaying(e.data===YT.PlayerState.PLAYING);paint();}}});}
 window.onYouTubeIframeAPIReady=()=>{if(ytId)loadYouTube(ytId);};
 function apply(row){settings=row||{};audio.pause();setPlaying(false);const url=String(settings.audio_url||'').trim();const id=youtubeId(url);mode=id?'youtube':'file';if(mode==='youtube'){audio.removeAttribute('src');loadYouTube(id);}else{if(youtubePlayer?.stopVideo)youtubePlayer.stopVideo();document.getElementById('yt-holder').style.display='none';audio.src=url||'';audio.load();}const title=String(settings.title||'').trim();nameEl.textContent=title|| (id?'YouTube':'لا يوجد شريط بعد');fmtEl.textContent=id?'YOUTUBE':(url?(FMT[settings.mime]||'AUDIO'):'—');$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(settings.lyrics)?settings.lyrics:parseLrc(settings.lyrics);$('lyrics').hidden=!lyrics.length;lastIndex=-2;paint();}
-async function refresh(){if(!db){nameEl.textContent='تعذّر تحميل الاتصال';return;}const {data,error}=await db.from('cassette_settings').select('*').eq('id',1).maybeSingle();if(error){console.error(error);nameEl.textContent='تعذّر تحميل الكاسيت';return;}apply(data);}
+// Read the public cassette independently of the administrator's login session.
+// A logged-in session may have different RLS permissions from a public visitor.
+async function refresh(){
+  try{
+    const response=await fetch(URL_BASE+'/rest/v1/cassette_settings?id=eq.1&select=*',{
+      headers:{apikey:PUBLIC_KEY,Accept:'application/json'},cache:'no-store'
+    });
+    if(!response.ok)throw Error('HTTP '+response.status+': '+(await response.text()).slice(0,250));
+    const rows=await response.json();
+    if(!Array.isArray(rows)||!rows.length){
+      console.warn('Public cassette row not visible: check SELECT grants and RLS policies for anon.');
+      nameEl.textContent='لا يوجد شريط بعد';
+      return false;
+    }
+    apply(rows[0]);return true;
+  }catch(error){
+    console.error('Cassette public read failed:',error);
+    nameEl.textContent='تعذّر تحميل الكاسيت';return false;
+  }
+}
 $('play').onclick=async()=>{if(mode==='youtube'){if(!youtubeReady)return;if(isPlaying)youtubePlayer.pauseVideo();else youtubePlayer.playVideo();}else{if(audio.paused){try{await audio.play();}catch(e){console.error(e);}}else audio.pause();}};
 $('restart').onclick=()=>{if(mode==='youtube')youtubePlayer?.seekTo(0,true);else audio.currentTime=0;paint();};
 $('vol').onclick=()=>{if(mode==='youtube'){if(!youtubeReady)return;youtubePlayer.isMuted()?youtubePlayer.unMute():youtubePlayer.mute();}else audio.muted=!audio.muted;const muted=mode==='youtube'?youtubePlayer?.isMuted():audio.muted;$('icVolOn').hidden=muted;$('icVolOff').hidden=!muted;};
@@ -455,8 +474,16 @@ $('fontIn').onchange=()=>{$('fontName').textContent=$('fontIn').files[0]?.name||
 $('fontDrop').onclick=()=>{$('fontIn').value='';$('fontName').textContent='بدون خط';};
 $('syncBtn').onclick=()=>msg($('editMsg'),'يمكنك إضافة أوقات LRC مباشرة. مزامنة النقر غير مفعّلة في هذه النسخة.',true);
 function storagePath(file){return 'tracks/'+Date.now()+'-'+Math.random().toString(36).slice(2)+'.'+(file.name.split('.').pop()||'mp3').replace(/[^a-z0-9]/gi,'');}
-editForm.onsubmit=async e=>{e.preventDefault();const save=$('save');save.disabled=true;msg($('editMsg'),'جارٍ الحفظ...');try{const {data:{user}}=await db.auth.getUser();if(!user)throw Error('انتهت الجلسة. سجّل الدخول مجدداً.');let url=String(settings.audio_url||'');let mime=settings.mime||'audio/mpeg';const f=$('file').files[0],yt=$('youtubeIn').value.trim();if(f&&yt)throw Error('اختر ملفاً أو رابط يوتيوب، وليس الاثنين معاً.');if(yt){if(!youtubeId(yt))throw Error('رابط يوتيوب غير صحيح.');url=yt;mime='youtube';}else if(f){if(!f.type.startsWith('audio/')&&!/\.(mp3|m4a|aac|wav|ogg)$/i.test(f.name))throw Error('اختر ملفاً صوتياً.');if(f.size>45*1024*1024)throw Error('الحد الأقصى للملف 45 ميجابايت.');const path=storagePath(f);const {error:upErr}=await db.storage.from('cassette-audio').upload(path,f,{contentType:f.type||'audio/mpeg',upsert:false});if(upErr)throw upErr;url=db.storage.from('cassette-audio').getPublicUrl(path).data.publicUrl;mime=f.type||'audio/mpeg';}if(!url)throw Error('اختر ملفاً أو ضع رابط يوتيوب.');const rows=parseLrc($('lyr').value);if($('lyr').value.trim()&&!rows.length)throw Error('الكلمات تحتاج توقيت LRC أو اتركها فارغة.');const update={title:$('titleIn').value.trim(),audio_url:url,lyrics:$('lyr').value.trim()};const {error}=await db.from('cassette_settings').update(update).eq('id',1);if(error)throw error;msg($('editMsg'),'تم الحفظ بنجاح. سيظهر للزوار عند تحديث الصفحة.');await refresh();}catch(err){console.error(err);msg($('editMsg'),err.message||'فشل الحفظ.',true);}finally{save.disabled=false;}};
+editForm.onsubmit=async e=>{e.preventDefault();const save=$('save');save.disabled=true;msg($('editMsg'),'جارٍ الحفظ...');try{const {data:{user}}=await db.auth.getUser();if(!user)throw Error('انتهت الجلسة. سجّل الدخول مجدداً.');let url=String(settings.audio_url||'');let mime=settings.mime||'audio/mpeg';const f=$('file').files[0],yt=$('youtubeIn').value.trim();if(f&&yt)throw Error('اختر ملفاً أو رابط يوتيوب، وليس الاثنين معاً.');if(yt){if(!youtubeId(yt))throw Error('رابط يوتيوب غير صحيح.');url=yt;mime='youtube';}else if(f){if(!f.type.startsWith('audio/')&&!/\.(mp3|m4a|aac|wav|ogg)$/i.test(f.name))throw Error('اختر ملفاً صوتياً.');if(f.size>45*1024*1024)throw Error('الحد الأقصى للملف 45 ميجابايت.');const path=storagePath(f);const {error:upErr}=await db.storage.from('cassette-audio').upload(path,f,{contentType:f.type||'audio/mpeg',upsert:false});if(upErr)throw upErr;url=db.storage.from('cassette-audio').getPublicUrl(path).data.publicUrl;mime=f.type||'audio/mpeg';}if(!url)throw Error('اختر ملفاً أو ضع رابط يوتيوب.');const rows=parseLrc($('lyr').value);if($('lyr').value.trim()&&!rows.length)throw Error('الكلمات تحتاج توقيت LRC أو اتركها فارغة.');const update={title:$('titleIn').value.trim(),audio_url:url,lyrics:$('lyr').value.trim()};const {data:updated,error}=await db.from('cassette_settings').update(update).eq('id',1).select('id,title,audio_url');
+if(error)throw error;
+if(!updated?.length)throw Error('لم يتم تعديل سجل الكاسيت. تحقق من صلاحيات UPDATE وسياسة RLS.');
+const visible=await refresh();
+if(!visible||settings.audio_url!==url){
+  throw Error('تم تحديث السجل، لكن القراءة العامة لم تُظهر الأغنية الجديدة. تحقق من صلاحيات SELECT لدور anon وسياسة RLS.');
+}
+msg($('editMsg'),'تم الحفظ والتأكد من ظهور الأغنية للزوار.');}catch(err){console.error(err);msg($('editMsg'),err.message||'فشل الحفظ.',true);}finally{save.disabled=false;}};
 await refresh();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
 })();
 </script>
 </body></html>
