@@ -1,6 +1,6 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
-<title>Side A</title>
-<meta name="claude:viewport-fit-sides" content="cover">
+<!doctype html><html lang="ar"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>كاسيت</title>
+<meta property="og:type" content="website"><meta property="og:title" content="كاسيت"><meta property="og:url" content="https://wu3x.github.io/cassette-player/"><meta property="og:image" content="https://wu3x.github.io/cassette-player/cassette-preview.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="كاسيت"><meta name="twitter:image" content="https://wu3x.github.io/cassette-player/cassette-preview.jpg"><meta name="claude:viewport-fit-sides" content="cover">
+<style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=IBM+Plex+Sans+Arabic:wght@400;600&amp;family=Instrument+Sans:wght@600&amp;display=swap">
 <style id="page-css">
 /* Layout: a single black cassette centered on a bare field. Admin lives in an invisible top-left hotspot. */
@@ -210,6 +210,11 @@ body{
 .ly.cur.pop{animation:rise .4s ease}
 @keyframes rise{from{opacity:0;transform:translateY(.9cqw)}to{opacity:1;transform:none}}
 
+.lyrics.before-first .ly{opacity:0!important;visibility:hidden}
+.ly.prev,.ly.next{transition:opacity .7s ease,transform .7s cubic-bezier(.22,1,.36,1)}
+.ly.cur.ly-enter{animation:lyric-glide .85s cubic-bezier(.22,1,.36,1) both}
+@keyframes lyric-glide{from{opacity:0;transform:translateY(12px) scale(.985);filter:blur(2px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
+@media(prefers-reduced-motion:reduce){.ly.cur.ly-enter{animation:none}.ly.prev,.ly.next{transition:none}}
 /* admin sheet */
 .sheet{
   position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:var(--scrim);
@@ -280,6 +285,7 @@ body{
   .btn{transition:none}
 }
 </style>
+</head><body>
 <template id="tpl">
 <main class="stage">
   <div class="deck">
@@ -377,7 +383,7 @@ body{
     <form id="editForm" hidden>
       <h2>تغيير الأغنية</h2>
       <p id="current"></p>
-      <label class="field"><span>رابط يوتيوب (اختياري، أو ارفع ملفاً)</span><input id="youtubeIn" type="text" placeholder="رابط فيديو YouTube"></label><div class="field"><span class="pick-title">ملف الأغنية</span>
+      <label class="field"><span>رابط مباشر لملف صوتي (اختياري، أو ارفع ملفاً)</span><input id="audioUrlIn" type="url" inputmode="url" placeholder="https://example.com/song.mp3"></label><div class="field"><span class="pick-title">ملف الأغنية</span>
         <label class="pick" for="file"><span class="pick-act">اختيار ملف</span><span class="pick-name" id="fileName">mp3 أو m4a، حتى 8 ميجابايت</span>
           <input id="file" type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg">
         </label>
@@ -387,7 +393,7 @@ body{
       </label>
       <div class="field"><span>كلمات الأغنية (اختياري)</span>
         <textarea id="lyr" dir="auto" spellcheck="false" placeholder="[00:12.50] السطر الأول&#10;[00:17.00] السطر الثاني"></textarea>
-        <p>الصق الكلمات بصيغة LRC (وقت قبل كل سطر)، أو اكتب سطراً لكل جملة بدون أوقات واضغط مزامنة بالنقر.</p>
+        <p>الصق الكلمات بصيغة LRC مع توقيت بداية كل سطر.</p>
         <button class="cbtn" id="syncBtn" type="button">مزامنة بالنقر</button>
       </div>
       <div class="field"><span class="pick-title">خط الكلمات (اختياري)</span>
@@ -410,7 +416,7 @@ body{
   </div>
 </div>
 </template>
-<div id="root"></div><div id="yt-holder" style="position:fixed;bottom:0;right:0;width:210px;height:118px;z-index:2;display:none;background:#111"></div>
+<div id="root"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
 (async function(){
@@ -422,20 +428,32 @@ const $=id=>root.querySelector('#'+id);
 const db=window.supabase?.createClient(URL_BASE,PUBLIC_KEY);
 const deck=$('cassette'),seek=$('seek'),nameEl=$('song'),fmtEl=$('fmt'),tCur=$('tCur'),tDur=$('tDur');
 const audio=new Audio();audio.preload='metadata';
-let settings={},lyrics=[],lastIndex=-2,mode='file',youtubePlayer=null,youtubeReady=false,ytId='',isPlaying=false,ytTimer=0;
+let settings={},lyrics=[],lastIndex=-2,isPlaying=false;
 const FMT={'audio/mpeg':'MP3','audio/mp4':'M4A','audio/wav':'WAV','audio/ogg':'OGG'};
 const fmt=t=>Math.floor(Math.max(0,t||0)/60)+':'+String(Math.floor(Math.max(0,t||0)%60)).padStart(2,'0');
-function youtubeId(url){try{const u=new URL(url);let host=u.hostname.replace(/^www\./,'');if(host==='youtu.be')return u.pathname.slice(1).split('/')[0];if(['youtube.com','m.youtube.com','music.youtube.com','youtube-nocookie.com'].includes(host)){if(u.pathname==='/watch')return u.searchParams.get('v');let m=u.pathname.match(/^\/(?:shorts|embed|live)\/([^/]+)/);return m&&m[1];}}catch(e){}return null;}
+function validAudioUrl(raw){try{const u=new URL(raw);if(!['https:','http:'].includes(u.protocol))return false;const host=u.hostname.toLowerCase();if(/(^|\.)(youtube\.com|youtu\.be|soundcloud\.com|spotify\.com|drive\.google\.com|dropbox\.com)$/.test(host))return false;return true;}catch{return false;}}
 function parseLrc(raw){const result=[];String(raw||'').split(/\r?\n/).forEach(line=>{const matches=[...line.matchAll(/\[(\d+):(\d{2})(?:[.:](\d{1,3}))?\]/g)];const txt=line.replace(/\[\d+:\d{2}(?:[.:]\d{1,3})?\]/g,'').trim();matches.forEach(m=>result.push([+m[1]*60 + +m[2]+(m[3]?Number('0.'+m[3]):0),txt]));});return result.sort((a,b)=>a[0]-b[0]);}
 function toLrc(rows){return rows.map(([t,line])=>'['+String(Math.floor(t/60)).padStart(2,'0')+':'+(t%60).toFixed(2).padStart(5,'0')+'] '+line).join('\n');}
-function renderLyrics(t){if(!lyrics.length)return;let i=-1;for(let j=0;j<lyrics.length;j++){if(lyrics[j][0]<=t)i=j;else break;}if(i===lastIndex)return;lastIndex=i;$('lyPrev').textContent=i>0?lyrics[i-1][1]:'';$('lyCur').textContent=i>=0?lyrics[i][1]:'';$('lyNext').textContent=lyrics[i+1]?.[1]||'';}
-function duration(){return mode==='youtube'?(youtubePlayer?.getDuration?.()||0):(audio.duration||0);}
-function currentTime(){return mode==='youtube'?(youtubePlayer?.getCurrentTime?.()||0):(audio.currentTime||0);}
+function renderLyrics(t){
+ if(!lyrics.length)return;
+ let i=-1;for(let j=0;j<lyrics.length;j++){if(lyrics[j][0]<=t)i=j;else break;}
+ if(i===lastIndex)return;
+ lastIndex=i;
+ const area=$('lyrics'),prev=$('lyPrev'),cur=$('lyCur'),next=$('lyNext');
+ // Hide ALL lyric text until the first timestamp (including the upcoming line).
+ if(i<0){area.classList.add('before-first');prev.textContent='';cur.textContent='';next.textContent='';return;}
+ area.classList.remove('before-first');
+ // Animate the outgoing line and the incoming line without changing the font.
+ cur.classList.remove('ly-enter');void cur.offsetWidth;
+ prev.textContent=i>0?lyrics[i-1][1]:'';
+ cur.textContent=lyrics[i][1];next.textContent=lyrics[i+1]?.[1]||'';
+ cur.classList.add('ly-enter');
+}
+function duration(){return audio.duration||0;}
+function currentTime(){return audio.currentTime||0;}
 function paint(){let d=duration(),t=currentTime(),p=d>0&&isFinite(d)?Math.min(1,t/d):0;seek.value=Math.round(p*1000);seek.style.setProperty('--pp',p*100+'%');tCur.textContent=fmt(t);tDur.textContent=fmt(d);$('packL').setAttribute('r',(47-9*p).toFixed(2));$('packR').setAttribute('r',(38+9*p).toFixed(2));renderLyrics(t);}
 function setPlaying(v){isPlaying=v;deck.classList.toggle('playing',v);$('icPlay').hidden=v;$('icPause').hidden=!v;}
-function loadYouTube(id){ytId=id;document.getElementById('yt-holder').style.display='block';if(!window.YT?.Player){if(!document.getElementById('yt-api')){const sc=document.createElement('script');sc.id='yt-api';sc.src='https://www.youtube.com/iframe_api';document.head.append(sc);}return;}if(youtubePlayer?.loadVideoById){youtubePlayer.cueVideoById(id);return;}youtubePlayer=new YT.Player('yt-holder',{width:210,height:118,videoId:id,playerVars:{playsinline:1,controls:1,autoplay:0,origin:location.origin},events:{onReady(){youtubeReady=true;paint();},onStateChange(e){setPlaying(e.data===YT.PlayerState.PLAYING);paint();}}});}
-window.onYouTubeIframeAPIReady=()=>{if(ytId)loadYouTube(ytId);};
-function apply(row){settings=row||{};audio.pause();setPlaying(false);const url=String(settings.audio_url||'').trim();const id=youtubeId(url);mode=id?'youtube':'file';if(mode==='youtube'){audio.removeAttribute('src');loadYouTube(id);}else{if(youtubePlayer?.stopVideo)youtubePlayer.stopVideo();document.getElementById('yt-holder').style.display='none';audio.src=url||'';audio.load();}const title=String(settings.title||'').trim();nameEl.textContent=title|| (id?'YouTube':'لا يوجد شريط بعد');fmtEl.textContent=id?'YOUTUBE':(url?(FMT[settings.mime]||'AUDIO'):'—');$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(settings.lyrics)?settings.lyrics:parseLrc(settings.lyrics);$('lyrics').hidden=!lyrics.length;lastIndex=-2;paint();}
+function apply(row){settings=row||{};audio.pause();setPlaying(false);const url=String(settings.audio_url||'').trim();audio.src=url||'';if(url)audio.load();const title=String(settings.title||'').trim();nameEl.textContent=title||'لا يوجد شريط بعد';fmtEl.textContent=url?(FMT[settings.mime]||'AUDIO'):'—';$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(settings.lyrics)?settings.lyrics:parseLrc(settings.lyrics);$('lyrics').hidden=!lyrics.length;lastIndex=-2;paint();}
 // Read the public cassette independently of the administrator's login session.
 // A logged-in session may have different RLS permissions from a public visitor.
 async function refresh(){
@@ -456,25 +474,25 @@ async function refresh(){
     nameEl.textContent='تعذّر تحميل الكاسيت';return false;
   }
 }
-$('play').onclick=async()=>{if(mode==='youtube'){if(!youtubeReady)return;if(isPlaying)youtubePlayer.pauseVideo();else youtubePlayer.playVideo();}else{if(audio.paused){try{await audio.play();}catch(e){console.error(e);}}else audio.pause();}};
-$('restart').onclick=()=>{if(mode==='youtube')youtubePlayer?.seekTo(0,true);else audio.currentTime=0;paint();};
-$('vol').onclick=()=>{if(mode==='youtube'){if(!youtubeReady)return;youtubePlayer.isMuted()?youtubePlayer.unMute():youtubePlayer.mute();}else audio.muted=!audio.muted;const muted=mode==='youtube'?youtubePlayer?.isMuted():audio.muted;$('icVolOn').hidden=muted;$('icVolOff').hidden=!muted;};
-seek.oninput=()=>{const t=duration()*seek.value/1000;if(mode==='youtube')youtubePlayer?.seekTo(t,true);else if(isFinite(t))audio.currentTime=t;paint();};
-audio.addEventListener('play',()=>setPlaying(true));audio.addEventListener('pause',()=>setPlaying(false));audio.addEventListener('ended',()=>{audio.currentTime=0;setPlaying(false);});audio.addEventListener('timeupdate',paint);audio.addEventListener('loadedmetadata',paint);ytTimer=setInterval(()=>{if(mode==='youtube'&&youtubeReady)paint();},300);
+$('play').onclick=async()=>{if(audio.paused){try{await audio.play();}catch(e){console.error('Audio playback failed:',e);}}else audio.pause();};
+$('restart').onclick=()=>{audio.currentTime=0;paint();};
+$('vol').onclick=()=>{audio.muted=!audio.muted;$('icVolOn').hidden=audio.muted;$('icVolOff').hidden=!audio.muted;};
+seek.oninput=()=>{const t=duration()*seek.value/1000;if(isFinite(t))audio.currentTime=t;paint();};
+audio.addEventListener('play',()=>setPlaying(true));audio.addEventListener('pause',()=>setPlaying(false));audio.addEventListener('ended',()=>{audio.currentTime=0;setPlaying(false);});audio.addEventListener('timeupdate',paint);audio.addEventListener('loadedmetadata',paint);
 const sheet=$('sheet'),pwForm=$('pwForm'),editForm=$('editForm');
 function msg(el,s,bad=false){el.textContent=s;el.className='msg'+(bad?' bad':' good');}
 function close(){sheet.hidden=true;pwForm.hidden=true;editForm.hidden=true;}
 $('gate').onclick=async()=>{sheet.hidden=false;const {data}=await db.auth.getSession();if(data.session){await showEditor();}else{pwForm.hidden=false;editForm.hidden=true;}};
 $('pwClose').onclick=close;$('editClose').onclick=close;
 $('logout').onclick=async()=>{await db.auth.signOut();close();};
-async function showEditor(){const {data:{user}}=await db.auth.getUser();if(!user){msg($('pwMsg'),'يرجى تسجيل الدخول.',true);return;}const {data,error}=await db.from('cassette_admins').select('*').eq('user_id',user.id).limit(1);if(error||!data?.length){await db.auth.signOut();pwForm.hidden=false;msg($('pwMsg'),'هذا الحساب ليس مسؤولاً مخولاً.',true);return;}pwForm.hidden=true;editForm.hidden=false;$('current').textContent='الحالي: '+(settings.title||'بدون اسم');$('titleIn').value=settings.title||'';$('youtubeIn').value=youtubeId(settings.audio_url||'')?settings.audio_url:'';$('lyr').value=Array.isArray(settings.lyrics)?toLrc(settings.lyrics):String(settings.lyrics||'');}
+async function showEditor(){const {data:{user}}=await db.auth.getUser();if(!user){msg($('pwMsg'),'يرجى تسجيل الدخول.',true);return;}const {data,error}=await db.from('cassette_admins').select('*').eq('user_id',user.id).limit(1);if(error||!data?.length){await db.auth.signOut();pwForm.hidden=false;msg($('pwMsg'),'هذا الحساب ليس مسؤولاً مخولاً.',true);return;}pwForm.hidden=true;editForm.hidden=false;$('current').textContent='الحالي: '+(settings.title||'بدون اسم');$('titleIn').value=settings.title||'';$('audioUrlIn').value='';$('lyr').value=Array.isArray(settings.lyrics)?toLrc(settings.lyrics):String(settings.lyrics||'');}
 pwForm.onsubmit=async e=>{e.preventDefault();msg($('pwMsg'),'جارٍ تسجيل الدخول...');const {error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('pw').value});$('pw').value='';if(error){msg($('pwMsg'),'فشل تسجيل الدخول. تحقق من البريد وكلمة المرور.',true);return;}await showEditor();};
 $('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'اختيار ملف';};
 $('fontIn').onchange=()=>{$('fontName').textContent=$('fontIn').files[0]?.name||'اختيار خط';};
 $('fontDrop').onclick=()=>{$('fontIn').value='';$('fontName').textContent='بدون خط';};
 $('syncBtn').onclick=()=>msg($('editMsg'),'يمكنك إضافة أوقات LRC مباشرة. مزامنة النقر غير مفعّلة في هذه النسخة.',true);
 function storagePath(file){return 'tracks/'+Date.now()+'-'+Math.random().toString(36).slice(2)+'.'+(file.name.split('.').pop()||'mp3').replace(/[^a-z0-9]/gi,'');}
-editForm.onsubmit=async e=>{e.preventDefault();const save=$('save');save.disabled=true;msg($('editMsg'),'جارٍ الحفظ...');try{const {data:{user}}=await db.auth.getUser();if(!user)throw Error('انتهت الجلسة. سجّل الدخول مجدداً.');let url=String(settings.audio_url||'');let mime=settings.mime||'audio/mpeg';const f=$('file').files[0],yt=$('youtubeIn').value.trim();if(f&&yt)throw Error('اختر ملفاً أو رابط يوتيوب، وليس الاثنين معاً.');if(yt){if(!youtubeId(yt))throw Error('رابط يوتيوب غير صحيح.');url=yt;mime='youtube';}else if(f){if(!f.type.startsWith('audio/')&&!/\.(mp3|m4a|aac|wav|ogg)$/i.test(f.name))throw Error('اختر ملفاً صوتياً.');if(f.size>45*1024*1024)throw Error('الحد الأقصى للملف 45 ميجابايت.');const path=storagePath(f);const {error:upErr}=await db.storage.from('cassette-audio').upload(path,f,{contentType:f.type||'audio/mpeg',upsert:false});if(upErr)throw upErr;url=db.storage.from('cassette-audio').getPublicUrl(path).data.publicUrl;mime=f.type||'audio/mpeg';}if(!url)throw Error('اختر ملفاً أو ضع رابط يوتيوب.');const rows=parseLrc($('lyr').value);if($('lyr').value.trim()&&!rows.length)throw Error('الكلمات تحتاج توقيت LRC أو اتركها فارغة.');const update={title:$('titleIn').value.trim(),audio_url:url,lyrics:$('lyr').value.trim()};const {data:updated,error}=await db.from('cassette_settings').update(update).eq('id',1).select('id,title,audio_url');
+editForm.onsubmit=async e=>{e.preventDefault();const save=$('save');save.disabled=true;msg($('editMsg'),'جارٍ الحفظ...');try{const {data:{user}}=await db.auth.getUser();if(!user)throw Error('انتهت الجلسة. سجّل الدخول مجدداً.');let url=String(settings.audio_url||'');let mime=settings.mime||'audio/mpeg';const f=$('file').files[0],direct=$('audioUrlIn').value.trim();if(f&&direct)throw Error('اختر ملفاً أو رابطاً صوتياً مباشراً، وليس الاثنين معاً.');if(direct){if(!validAudioUrl(direct))throw Error('أدخل رابط HTTP أو HTTPS مباشر لملف صوتي، وليس رابط يوتيوب أو صفحة مشاركة.');url=direct;mime=/\.m4a(?:[?#]|$)/i.test(direct)?'audio/mp4':/\.ogg(?:[?#]|$)/i.test(direct)?'audio/ogg':'audio/mpeg';}else if(f){if(!f.type.startsWith('audio/')&&!/\.(mp3|m4a|aac|wav|ogg)$/i.test(f.name))throw Error('اختر ملفاً صوتياً.');if(f.size>45*1024*1024)throw Error('الحد الأقصى للملف 45 ميجابايت.');const path=storagePath(f);const {error:upErr}=await db.storage.from('cassette-audio').upload(path,f,{contentType:f.type||'audio/mpeg',upsert:false});if(upErr)throw upErr;url=db.storage.from('cassette-audio').getPublicUrl(path).data.publicUrl;mime=f.type||'audio/mpeg';}if(!url)throw Error('اختر ملفاً أو ضع رابطاً مباشراً لملف صوتي.');const rows=parseLrc($('lyr').value);if($('lyr').value.trim()&&!rows.length)throw Error('الكلمات تحتاج توقيت LRC أو اتركها فارغة.');const update={title:$('titleIn').value.trim(),audio_url:url,lyrics:$('lyr').value.trim()};const {data:updated,error}=await db.from('cassette_settings').update(update).eq('id',1).select('id,title,audio_url');
 if(error)throw error;
 if(!updated?.length)throw Error('لم يتم تعديل سجل الكاسيت. تحقق من صلاحيات UPDATE وسياسة RLS.');
 const visible=await refresh();
