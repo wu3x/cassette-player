@@ -422,7 +422,7 @@ body{background:var(--bg);transition:background .25s ease}
 <button class="cbtn primary" id="musicSearch" type="button">🔎 بحث وتجربة</button>
 <p class="studio-tip">البحث التلقائي يعرض معاينات قصيرة متاحة من iTunes، وليست أغاني كاملة. لملف كامل استخدم ملفًا أو رابطًا صوتيًا مباشرًا مصرحًا به.</p>
 <div class="music-links"><a id="musicTubidy" href="https://m.tubidy.llc" target="_blank" rel="noopener noreferrer">Tubidy ↗</a><a id="musicSoundcloud" href="https://soundcloud.com/search" target="_blank" rel="noopener noreferrer">SoundCloud ↗</a><a id="musicAudiomack" href="https://audiomack.com" target="_blank" rel="noopener noreferrer">Audiomack ↗</a></div>
-<div class="music-results" id="musicResults" aria-live="polite"></div><div class="msg" id="musicMsg" role="status"></div>
+<label class="field"><span>رابط أغنية SoundCloud للمعاينة</span><input id="scUrlIn" type="url" inputmode="url" placeholder="https://soundcloud.com/artist/track"></label><button class="cbtn primary" id="scPreview" type="button">📼 معاينة SoundCloud بالكاسيت</button><p class="studio-tip">تجربة خاصة بالمسؤول، لا تُنشر للزوار. يلزم أن يسمح صاحب المقطع بتضمينه، وقد يظهر مشغّل SoundCloud الرسمي.</p><div class="music-results" id="musicResults" aria-live="polite"></div><div class="msg" id="musicMsg" role="status"></div>
 </section>
       <label class="field"><span>رابط مباشر لملف صوتي (اختياري، أو ارفع ملفاً)</span><input id="audioUrlIn" type="url" inputmode="url" placeholder="https://example.com/song.mp3"><small class="audio-help">إذا الأغنية عندك كملف، ارفعها على خدمة استضافة ملفات صوتية تدعم الروابط المباشرة، وانسخ رابط تشغيل الملف (MP3 أو M4A) والصقه هنا. لازم الرابط يفتح الصوت نفسه، مو صفحة تحميل أو مشاركة. وتقدر بدل ذلك ترفع الملف من الخانة التالية.</small></label><div class="field"><span class="pick-title">ملف الأغنية</span>
         <label class="pick" for="file"><span class="pick-act">اختيار ملف</span><span class="pick-name" id="fileName">ملف صوتي، حتى 45 ميجابايت</span>
@@ -459,6 +459,7 @@ body{background:var(--bg);transition:background .25s ease}
     </div>
   </div>
 </div>
+<div id="scEmbedWrap" hidden style="position:fixed;z-index:11;bottom:100px;left:12px;right:12px;max-width:520px;margin:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px"><div id="scEmbed"></div><small style="display:block;text-align:center;color:var(--panel-muted);font:12px var(--arabic)">مشغّل SoundCloud الرسمي — المعاينة خاصة بالمسؤول</small></div>
 <div class="previewbar" id="previewbar" hidden>
   <strong>🔒 وضع المعاينة — غير منشور</strong>
   <div class="row"><button class="cbtn primary" id="publishPreview" type="button">حفظ ونشر</button><button class="cbtn" id="backPreview" type="button">رجوع للتعديل</button><button class="cbtn" id="cancelPreview" type="button">إلغاء</button></div>
@@ -467,6 +468,7 @@ body{background:var(--bg);transition:background .25s ease}
 </template>
 <div id="root"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://w.soundcloud.com/player/api.js"></script>
 <script>
 (async function(){
 'use strict';
@@ -478,6 +480,7 @@ const db=window.supabase?.createClient(URL_BASE,PUBLIC_KEY);
 const deck=$('cassette'),seek=$('seek'),nameEl=$('song'),fmtEl=$('fmt'),tCur=$('tCur'),tDur=$('tDur');
 const audio=new Audio();audio.preload='metadata';
 let settings={},lyrics=[],lastIndex=-2,isPlaying=false;
+let scWidget=null,scPreviewMode=false,scPosition=0,scDuration=0,scReady=false,scMuted=false;
 const defaultStudio={style:'classic',theme:'dark',shell:'#29292b',button:'#9a978e',stripe1:'#5cc46b',stripe2:'#4cb59f',stripe3:'#3f7de0'};
 let studio={...defaultStudio};
 function studioFromForm(){return {style:$('styleIn').value,theme:$('themeIn').value,shell:$('shellIn').value,button:$('buttonIn').value,stripe1:$('stripe1In').value,stripe2:$('stripe2In').value,stripe3:$('stripe3In').value};}
@@ -505,8 +508,8 @@ function renderLyrics(t){
  cur.textContent=lyrics[i][1];next.textContent=lyrics[i+1]?.[1]||'';
  cur.classList.add('ly-enter');
 }
-function duration(){return audio.duration||0;}
-function currentTime(){return audio.currentTime||0;}
+function duration(){return scPreviewMode?scDuration:(audio.duration||0);}
+function currentTime(){return scPreviewMode?scPosition:(audio.currentTime||0);}
 function paint(){let d=duration(),t=currentTime(),p=d>0&&isFinite(d)?Math.min(1,t/d):0;seek.value=Math.round(p*1000);seek.style.setProperty('--pp',p*100+'%');tCur.textContent=fmt(t);tDur.textContent=fmt(d);$('packL').setAttribute('r',(47-9*p).toFixed(2));$('packR').setAttribute('r',(38+9*p).toFixed(2));renderLyrics(t);}
 function setPlaying(v){isPlaying=v;deck.classList.toggle('playing',v);$('icPlay').hidden=v;$('icPause').hidden=!v;}
 function apply(row,{temporary=false}={}){if(!temporary)settings=row||{};const display=row||{};studioPaint(temporary?(display.studio||studio):studioFromRow(display));audio.pause();setPlaying(false);const url=String(display.audio_url||'').trim();if(url){audio.src=url;audio.load();}else{audio.removeAttribute('src');audio.load();}const title=String(display.title||'').trim();nameEl.textContent=title||'لا يوجد شريط بعد';fmtEl.textContent=url?(FMT[display.mime]||'AUDIO'):'—';$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(display.lyrics)?display.lyrics:parseLrc(display.lyrics);$('lyrics').hidden=!lyrics.length;if(!lyrics.length){$('lyrics').classList.remove('before-first');$('lyPrev').textContent='';$('lyCur').textContent='';$('lyNext').textContent='';}lastIndex=-2;paint();}
@@ -532,10 +535,10 @@ async function refresh(){
     if(!previewActive)nameEl.textContent='تعذّر تحميل الكاسيت';return false;
   }
 }
-$('play').onclick=async()=>{if(audio.paused){try{await audio.play();}catch(e){console.error('Audio playback failed:',e);}}else audio.pause();};
-$('restart').onclick=()=>{audio.currentTime=0;paint();};
-$('vol').onclick=()=>{audio.muted=!audio.muted;$('icVolOn').hidden=audio.muted;$('icVolOff').hidden=!audio.muted;};
-seek.oninput=()=>{const t=duration()*seek.value/1000;if(isFinite(t))audio.currentTime=t;paint();};
+$('play').onclick=async()=>{if(scPreviewMode){if(!scReady){$('previewMsg').textContent='انتظر تحميل مشغّل SoundCloud.';return;}scWidget?.[isPlaying?'pause':'play']();return;}if(audio.paused){try{await audio.play();}catch(e){console.error('Audio playback failed:',e);}}else audio.pause();};
+$('restart').onclick=()=>{if(scPreviewMode){scWidget?.seekTo(0);scPosition=0;}else audio.currentTime=0;paint();};
+$('vol').onclick=()=>{if(scPreviewMode){scMuted=!scMuted;scWidget?.setVolume(scMuted?0:100);}else audio.muted=!audio.muted;const muted=scPreviewMode?scMuted:audio.muted;$('icVolOn').hidden=muted;$('icVolOff').hidden=!muted;};
+seek.oninput=()=>{const t=duration()*seek.value/1000;if(isFinite(t)){if(scPreviewMode){scPosition=t;scWidget?.seekTo(Math.round(t*1000));}else audio.currentTime=t;}paint();};
 audio.addEventListener('play',()=>setPlaying(true));audio.addEventListener('pause',()=>setPlaying(false));audio.addEventListener('ended',()=>{audio.currentTime=0;setPlaying(false);});audio.addEventListener('timeupdate',paint);audio.addEventListener('loadedmetadata',paint);
 const sheet=$('sheet'),pwForm=$('pwForm'),editForm=$('editForm');
 function msg(el,s,bad=false){el.textContent=s;el.className='msg'+(bad?' bad':' good');}
@@ -548,6 +551,27 @@ pwForm.onsubmit=async e=>{e.preventDefault();msg($('pwMsg'),'جارٍ تسجيل
 $('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'اختيار ملف';if($('file').files.length)$('audioUrlIn').value='';};
 
 // Admin-only discovery. Public playback and database are untouched.
+function soundcloudUrl(raw){try{const u=new URL(raw.trim());return u.protocol==='https:'&&/(^|\\.)soundcloud\\.com$/i.test(u.hostname)&&u.pathname.split('/').filter(Boolean).length>=2;}catch{return false;}}
+$('scPreview').onclick=()=>{
+ const url=$('scUrlIn').value.trim();
+ if(!soundcloudUrl(url)){msg($('musicMsg'),'ألصق رابط أغنية SoundCloud كاملًا، مثل soundcloud.com/artist/track.',true);return;}
+ if(!window.SC?.Widget){msg($('musicMsg'),'تعذر تحميل أداة SoundCloud. تحقق من الاتصال ثم أعد المحاولة.',true);return;}
+ if(previewActive)endPreview();
+ audio.pause();scPreviewMode=true;scReady=false;scPosition=0;scDuration=0;previewActive=true;previewDraft=null;
+ $('scEmbed').replaceChildren();
+ const frame=document.createElement('iframe');frame.title='SoundCloud';frame.width='100%';frame.height='110';frame.style.border='0';frame.allow='autoplay';frame.src='https://w.soundcloud.com/player/?url='+encodeURIComponent(url)+'&auto_play=false&hide_related=true&show_comments=false&show_user=true&show_reposts=false&visual=false';
+ $('scEmbed').append(frame);$('scEmbedWrap').hidden=false;
+ scWidget=window.SC.Widget(frame);
+ scWidget.bind(window.SC.Widget.Events.READY,()=>{if(!scPreviewMode)return;scReady=true;scWidget.getDuration(ms=>{scDuration=ms/1000||0;paint();});scWidget.getCurrentSound(sound=>{if(sound?.title)nameEl.textContent=sound.title;});$('previewMsg').textContent='جاهز. اضغط تشغيل على الكاسيت. بعض المقاطع تمنع التضمين.';});
+ scWidget.bind(window.SC.Widget.Events.PLAY,()=>{if(scPreviewMode)setPlaying(true);});
+ scWidget.bind(window.SC.Widget.Events.PAUSE,()=>{if(scPreviewMode)setPlaying(false);});
+ scWidget.bind(window.SC.Widget.Events.FINISH,()=>{if(scPreviewMode){setPlaying(false);scPosition=0;paint();}});
+ scWidget.bind(window.SC.Widget.Events.PLAY_PROGRESS,e=>{if(scPreviewMode){scPosition=(e.currentPosition||0)/1000;paint();}});
+ scWidget.bind(window.SC.Widget.Events.ERROR,()=>{if(scPreviewMode)msg($('previewMsg'),'المقطع غير متاح للتضمين أو تعذر تشغيله. جرّب رابطًا آخر.',true);});
+ setPlaying(false);nameEl.textContent='معاينة SoundCloud';fmtEl.textContent='SC';$('play').disabled=false;$('restart').disabled=false;seek.disabled=false;
+ sheet.hidden=true;$('previewbar').hidden=false;$('publishPreview').hidden=true;$('previewMsg').textContent='جارٍ تجهيز مشغّل SoundCloud...';
+};
+
 let musicSearchNonce=0;
 $('musicSearch').onclick=async()=>{
  const q=$('musicQuery').value.trim(),results=$('musicResults');results.replaceChildren();
@@ -598,6 +622,8 @@ $('syncCancel').onclick=()=>{audio.pause();syncAudioReady=false;$('syncBox').hid
 function storagePath(file){return 'tracks/'+Date.now()+'-'+Math.random().toString(36).slice(2)+'.'+(file.name.split('.').pop()||'mp3').replace(/[^a-z0-9]/gi,'');}
 function releasePreviewAssets(){if(previewObjectUrl){URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null;}}
 function endPreview(restore=true){
+  $('publishPreview').hidden=false;
+  if(scPreviewMode){scWidget?.pause();scWidget=null;scPreviewMode=false;scReady=false;scPosition=0;scDuration=0;$('scEmbed').replaceChildren();$('scEmbedWrap').hidden=true;}
   previewActive=false;$('previewbar').hidden=true;audio.pause();
   if(restore)apply(settings);
   releasePreviewAssets();previewDraft=null;
@@ -616,6 +642,7 @@ function draftFromForm(){
   return {title:$('titleIn').value.trim(),lyrics,file,direct,url,mime,studio:studioFromForm()};
 }
 $('previewBtn').onclick=()=>{
+  if(scPreviewMode)endPreview(false);
   try{
     const draft=draftFromForm();
     if(previewObjectUrl){URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null;}previewDraft=draft;
@@ -627,6 +654,7 @@ $('previewBtn').onclick=()=>{
 $('backPreview').onclick=()=>{endPreview();sheet.hidden=false;pwForm.hidden=true;editForm.hidden=false;};
 $('cancelPreview').onclick=()=>{endPreview();close();};
 $('publishPreview').onclick=async()=>{
+  if(scPreviewMode){msg($('previewMsg'),'معاينة SoundCloud فقط؛ النشر يتطلب ملفًا صوتيًا أو رابط ملف مباشر تملك حق استخدامه.',true);return;}
   if(!previewActive||!previewDraft)return;
   if(!confirm('هل تريد حفظ الأغنية ونشرها الآن لجميع الزوار؟'))return;
   $('publishPreview').disabled=true;msg($('previewMsg'),'جارٍ النشر...');await publishDraft();
