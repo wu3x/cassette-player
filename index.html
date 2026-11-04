@@ -486,7 +486,7 @@ function studioFill(v){for(const [key,id] of [['style','styleIn'],['theme','them
 function studioFromRow(row){return Object.fromEntries(Object.keys(defaultStudio).map(k=>[k,row?.['studio_'+k]||defaultStudio[k]]));}
  let previewActive=false,previewObjectUrl=null,previewDraft=null;
 const FMT={'audio/mpeg':'MP3','audio/mp4':'M4A','audio/wav':'WAV','audio/ogg':'OGG'};
-const fmt=t=>Math.floor(Math.max(0,t||0)/60)+':'+String(Math.floor(Math.max(0,t||0)%60)).padStart(2,'0');
+const fmt=t=>{t=Number.isFinite(t)?Math.max(0,t):0;return Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');};
 function validAudioUrl(raw){try{const u=new URL(raw);if(!['https:','http:'].includes(u.protocol))return false;const host=u.hostname.toLowerCase();if(/(^|\.)(youtube\.com|youtu\.be|soundcloud\.com|spotify\.com|drive\.google\.com|dropbox\.com)$/.test(host))return false;return true;}catch{return false;}}
 function parseLrc(raw){const result=[];String(raw||'').split(/\r?\n/).forEach(line=>{const matches=[...line.matchAll(/\[(\d+):(\d{2})(?:[.:](\d{1,3}))?\]/g)];const txt=line.replace(/\[\d+:\d{2}(?:[.:]\d{1,3})?\]/g,'').trim();matches.forEach(m=>result.push([+m[1]*60 + +m[2]+(m[3]?Number('0.'+m[3]):0),txt]));});return result.sort((a,b)=>a[0]-b[0]);}
 function toLrc(rows){return rows.map(([t,line])=>{const cs=Math.max(0,Math.round(t*100));return '['+String(Math.floor(cs/6000)).padStart(2,'0')+':'+String(Math.floor(cs%6000/100)).padStart(2,'0')+'.'+String(cs%100).padStart(2,'0')+'] '+line;}).join('\n');}
@@ -509,7 +509,7 @@ function duration(){return audio.duration||0;}
 function currentTime(){return audio.currentTime||0;}
 function paint(){let d=duration(),t=currentTime(),p=d>0&&isFinite(d)?Math.min(1,t/d):0;seek.value=Math.round(p*1000);seek.style.setProperty('--pp',p*100+'%');tCur.textContent=fmt(t);tDur.textContent=fmt(d);$('packL').setAttribute('r',(47-9*p).toFixed(2));$('packR').setAttribute('r',(38+9*p).toFixed(2));renderLyrics(t);}
 function setPlaying(v){isPlaying=v;deck.classList.toggle('playing',v);$('icPlay').hidden=v;$('icPause').hidden=!v;}
-function apply(row,{temporary=false}={}){if(!temporary)settings=row||{};const display=row||{};studioPaint(temporary?(display.studio||studio):studioFromRow(display));audio.pause();setPlaying(false);const url=String(display.audio_url||'').trim();audio.src=url||'';if(url)audio.load();const title=String(display.title||'').trim();nameEl.textContent=title||'لا يوجد شريط بعد';fmtEl.textContent=url?(FMT[display.mime]||'AUDIO'):'—';$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(display.lyrics)?display.lyrics:parseLrc(display.lyrics);$('lyrics').hidden=!lyrics.length;lastIndex=-2;paint();}
+function apply(row,{temporary=false}={}){if(!temporary)settings=row||{};const display=row||{};studioPaint(temporary?(display.studio||studio):studioFromRow(display));audio.pause();setPlaying(false);const url=String(display.audio_url||'').trim();if(url){audio.src=url;audio.load();}else{audio.removeAttribute('src');audio.load();}const title=String(display.title||'').trim();nameEl.textContent=title||'لا يوجد شريط بعد';fmtEl.textContent=url?(FMT[display.mime]||'AUDIO'):'—';$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(display.lyrics)?display.lyrics:parseLrc(display.lyrics);$('lyrics').hidden=!lyrics.length;if(!lyrics.length){$('lyrics').classList.remove('before-first');$('lyPrev').textContent='';$('lyCur').textContent='';$('lyNext').textContent='';}lastIndex=-2;paint();}
 // Read the public cassette independently of the administrator's login session.
 // A logged-in session may have different RLS permissions from a public visitor.
 async function refresh(){
@@ -525,10 +525,11 @@ async function refresh(){
       nameEl.textContent='لا يوجد شريط بعد';
       return false;
     }
+    if(previewActive)return true;
     apply(rows[0]);return true;
   }catch(error){
     console.error('Cassette public read failed:',error);
-    nameEl.textContent='تعذّر تحميل الكاسيت';return false;
+    if(!previewActive)nameEl.textContent='تعذّر تحميل الكاسيت';return false;
   }
 }
 $('play').onclick=async()=>{if(audio.paused){try{await audio.play();}catch(e){console.error('Audio playback failed:',e);}}else audio.pause();};
@@ -538,13 +539,13 @@ seek.oninput=()=>{const t=duration()*seek.value/1000;if(isFinite(t))audio.curren
 audio.addEventListener('play',()=>setPlaying(true));audio.addEventListener('pause',()=>setPlaying(false));audio.addEventListener('ended',()=>{audio.currentTime=0;setPlaying(false);});audio.addEventListener('timeupdate',paint);audio.addEventListener('loadedmetadata',paint);
 const sheet=$('sheet'),pwForm=$('pwForm'),editForm=$('editForm');
 function msg(el,s,bad=false){el.textContent=s;el.className='msg'+(bad?' bad':' good');}
-function close(){sheet.hidden=true;pwForm.hidden=true;editForm.hidden=true;}
+function close(){sheet.hidden=true;pwForm.hidden=true;editForm.hidden=true;$('syncBox').hidden=true;}
 $('gate').onclick=async()=>{sheet.hidden=false;const {data}=await db.auth.getSession();if(data.session){await showEditor();}else{pwForm.hidden=false;editForm.hidden=true;}};
 $('pwClose').onclick=close;$('editClose').onclick=close;
 $('logout').onclick=async()=>{await db.auth.signOut();close();};
 async function showEditor(){const {data:{user}}=await db.auth.getUser();if(!user){msg($('pwMsg'),'يرجى تسجيل الدخول.',true);return;}const {data,error}=await db.from('cassette_admins').select('*').eq('user_id',user.id).limit(1);if(error||!data?.length){await db.auth.signOut();pwForm.hidden=false;msg($('pwMsg'),'هذا الحساب ليس مسؤولاً مخولاً.',true);return;}pwForm.hidden=true;editForm.hidden=false;$('current').textContent='الحالي: '+(settings.title||'بدون اسم');$('titleIn').value=settings.title||'';$('audioUrlIn').value='';$('lyr').value=Array.isArray(settings.lyrics)?toLrc(settings.lyrics):String(settings.lyrics||'');studioFill(studioFromRow(settings));}
 pwForm.onsubmit=async e=>{e.preventDefault();msg($('pwMsg'),'جارٍ تسجيل الدخول...');const {error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('pw').value});$('pw').value='';if(error){msg($('pwMsg'),'فشل تسجيل الدخول. تحقق من البريد وكلمة المرور.',true);return;}await showEditor();};
-$('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'اختيار ملف';};
+$('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'اختيار ملف';if($('file').files.length)$('audioUrlIn').value='';};
 
 // Admin-only discovery. Public playback and database are untouched.
 let musicSearchNonce=0;
@@ -578,7 +579,7 @@ $('musicSearch').onclick=async()=>{
    row.append(listen,choose);item.append(title,artist,row);results.append(item);
   });
   msg($('musicMsg'),'نتائج تجريبية قصيرة، وليست أغاني كاملة.');
- }catch(e){if(nonce===musicSearchNonce)msg($('musicMsg'),'تعذر البحث التلقائي. استخدم روابط المنصات أو ارفع ملفًا صوتيًا.',true);}
+ }catch(e){if(nonce===musicSearchNonce)msg($('musicMsg'),'تعذر الاتصال بمصدر المعاينات من المتصفح. روابط المنصات للبحث الخارجي فقط، ويمكنك رفع ملف أو إدخال رابط صوت مباشر.',true);}
 };
 $('musicQuery').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('musicSearch').click();}});
 
@@ -609,15 +610,15 @@ function draftFromForm(){
   if(file&&file.size>45*1024*1024)throw Error('الملف يتجاوز 45 ميجابايت.');
   const lyrics=$('lyr').value.trim();
   if(lyrics&&!parseLrc(lyrics).length)throw Error('الكلمات تحتاج توقيت LRC صحيح.');
+  if(!direct&&!file&&!settings.audio_url)throw Error('اختر أغنية أو ضع رابطاً مباشراً.');
   const url=direct||(file?URL.createObjectURL(file):String(settings.audio_url||''));
-  if(!url)throw Error('اختر أغنية أو ضع رابطاً مباشراً.');
   const mime=file?(file.type||'audio/mpeg'):(direct?/\.m4a(?:[?#]|$)/i.test(direct)?'audio/mp4':/\.ogg(?:[?#]|$)/i.test(direct)?'audio/ogg':'audio/mpeg':settings.mime||'audio/mpeg');
   return {title:$('titleIn').value.trim(),lyrics,file,direct,url,mime,studio:studioFromForm()};
 }
 $('previewBtn').onclick=()=>{
   try{
-    if(previewObjectUrl){URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null;}
-    const draft=draftFromForm();previewDraft=draft;
+    const draft=draftFromForm();
+    if(previewObjectUrl){URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null;}previewDraft=draft;
     if(draft.file)previewObjectUrl=draft.url;
     previewActive=true;apply({title:draft.title,audio_url:draft.url,mime:draft.mime,lyrics:draft.lyrics,studio:draft.studio},{temporary:true});
     sheet.hidden=true;$('previewbar').hidden=false;$('previewMsg').textContent='اضغط تشغيل على الكاسيت لتجربة الأغنية.';
@@ -638,7 +639,7 @@ previewActive=false;const visible=await refresh();
 if(!visible||settings.audio_url!==url){
   throw Error('تم تحديث السجل، لكن القراءة العامة لم تُظهر الأغنية الجديدة. تحقق من صلاحيات SELECT لدور anon وسياسة RLS.');
 }
-endPreview(false);close();}catch(err){console.error(err);msg($('previewMsg'),err.message||'فشل الحفظ.',true);previewActive=true;}finally{save.disabled=false;$('publishPreview').disabled=false;}}
+endPreview(false);close();}catch(err){console.error(err);if(previewDraft){previewActive=true;apply({title:previewDraft.title,audio_url:previewDraft.url,mime:previewDraft.mime,lyrics:previewDraft.lyrics,studio:previewDraft.studio},{temporary:true});}msg($('previewMsg'),err.message||'فشل الحفظ.',true);}finally{save.disabled=false;$('publishPreview').disabled=false;}}
 await refresh();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!previewActive&&audio.paused)refresh();});
 })();
