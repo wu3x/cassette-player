@@ -551,7 +551,7 @@ pwForm.onsubmit=async e=>{e.preventDefault();msg($('pwMsg'),'جارٍ تسجيل
 $('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'اختيار ملف';if($('file').files.length)$('audioUrlIn').value='';};
 
 // Admin-only discovery. Public playback and database are untouched.
-function soundcloudUrl(raw){try{const u=new URL(raw.trim());return u.protocol==='https:'&&/(^|\\.)soundcloud\\.com$/i.test(u.hostname)&&u.pathname.split('/').filter(Boolean).length>=2;}catch{return false;}}
+function soundcloudUrl(raw){try{const u=new URL(raw.trim());return u.protocol==='https:'&&u.hostname.toLowerCase().split('.').slice(-2).join('.')==='soundcloud.com'&&u.pathname.split('/').filter(Boolean).length>=2;}catch{return false;}}
 $('scPreview').onclick=()=>{
  const url=$('scUrlIn').value.trim();
  if(!soundcloudUrl(url)){msg($('musicMsg'),'ألصق رابط أغنية SoundCloud كاملًا، مثل soundcloud.com/artist/track.',true);return;}
