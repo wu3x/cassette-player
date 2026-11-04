@@ -1,6 +1,6 @@
 <!doctype html><html lang="ar"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>كاسيت</title>
 <meta property="og:type" content="website"><meta property="og:title" content="كاسيت"><meta property="og:url" content="https://wu3x.github.io/cassette-player/"><meta property="og:image" content="https://wu3x.github.io/cassette-player/cassette-preview.jpg"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="كاسيت"><meta name="twitter:image" content="https://wu3x.github.io/cassette-player/cassette-preview.jpg"><meta name="claude:viewport-fit-sides" content="cover">
-<style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style>
+
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=IBM+Plex+Sans+Arabic:wght@400;600&amp;family=Instrument+Sans:wght@600&amp;display=swap">
 <style id="page-css">
 /* Layout: a single black cassette centered on a bare field. Admin lives in an invisible top-left hotspot. */
@@ -290,6 +290,18 @@ body{
   .btn{transition:none}
 }
 </style>
+<style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}
+/* Studio additions */
+.cassette{--studio-shell:#29292b;--studio-a:#5cc46b;--studio-b:#4cb59f;--studio-c:#3f7de0;--studio-button:#9a978e;background:linear-gradient(158deg,var(--studio-shell),#0c0c0e 85%)}
+.stripes i:nth-child(1){background:var(--studio-a)}.stripes i:nth-child(2){background:var(--studio-b)}.stripes i:nth-child(3){background:var(--studio-c)}.btn.main{background:var(--studio-button)}
+.cassette[data-style="blue"] .label{background:#d8e8f2}.cassette[data-style="blue"] .paper{background:#d7e7f3}.cassette[data-style="blue"] .pill{background:#123956}
+.cassette[data-style="cream"] .label{background:#e5dbb5}.cassette[data-style="cream"] .paper{background:#eee5c5}.cassette[data-style="cream"] .pill{background:#695e3f}
+.cassette[data-style="red"] .label{background:#ead3cd}.cassette[data-style="red"] .paper{background:#f4e4db}.cassette[data-style="red"] .pill{background:#a23838}
+.cassette[data-style="yellow"] .label{background:#eee2ac}.cassette[data-style="yellow"] .paper{background:#f4e9b7}.cassette[data-style="yellow"] .pill{background:#866719}
+.cassette[data-style="white"] .label{background:#e6e6df}.cassette[data-style="white"] .paper{background:#f8f8f0}.cassette[data-style="white"] .pill{background:#a42e32}
+.cassette-signature{position:absolute;bottom:2.7cqw;left:13.4cqw;z-index:2;font:500 max(7px,1.35cqw) var(--mono);letter-spacing:.025em;color:#c9c9c9;opacity:.52;text-decoration:none;transform:rotate(-2deg)}
+.cassette-signature:hover{opacity:.95}.studio-box{border:1px solid var(--line);border-radius:13px;padding:12px;display:grid;gap:10px}.studio-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.studio-grid label{font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:6px}.studio-grid input[type=color]{width:48px;height:36px;border:0;background:transparent}.studio-box select{width:100%;min-height:43px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--panel-ink);font:inherit;padding:6px}.studio-box textarea{min-height:100px}.studio-tip{font-size:12px!important}
+</style>
 </head><body>
 <template id="tpl">
 <main class="stage">
@@ -366,6 +378,7 @@ body{
           <svg id="icVolOff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M4 9.5v5h3.5l4.5 4v-13l-4.5 4z" fill="currentColor"/><path d="M16 9.5l5 5"/><path d="M21 9.5l-5 5"/></svg>
         </button>
       </div>
+    <a class="cassette-signature" href="https://www.instagram.com/wu3x/" target="_blank" rel="noopener noreferrer" aria-label="Instagram @wu3x">@wu3x</a>
     </section>
     <div class="lyrics" id="lyrics" hidden>
       <p class="ly prev" id="lyPrev" dir="auto"></p>
@@ -389,7 +402,7 @@ body{
       <h2>تغيير الأغنية</h2>
       <p id="current"></p>
       <label class="field"><span>رابط مباشر لملف صوتي (اختياري، أو ارفع ملفاً)</span><input id="audioUrlIn" type="url" inputmode="url" placeholder="https://example.com/song.mp3"></label><div class="field"><span class="pick-title">ملف الأغنية</span>
-        <label class="pick" for="file"><span class="pick-act">اختيار ملف</span><span class="pick-name" id="fileName">mp3 أو m4a، حتى 8 ميجابايت</span>
+        <label class="pick" for="file"><span class="pick-act">اختيار ملف</span><span class="pick-name" id="fileName">ملف صوتي، حتى 45 ميجابايت</span>
           <input id="file" type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg">
         </label>
       </div>
@@ -401,13 +414,21 @@ body{
         <p>الصق الكلمات بصيغة LRC مع توقيت بداية كل سطر.</p>
         <button class="cbtn" id="syncBtn" type="button">مزامنة بالنقر</button>
       </div>
-      <div class="field"><span class="pick-title">خط الكلمات (اختياري)</span>
+      <div class="field"><span class="pick-title">تجربة خط الكلمات في المعاينة فقط</span>
         <label class="pick" for="fontIn"><span class="pick-act">اختيار خط</span><span class="pick-name" id="fontName">ttf أو otf أو woff2، حتى 1.5 ميجابايت</span>
           <input id="fontIn" type="file" accept=".ttf,.otf,.woff,.woff2,font/*">
         </label>
-        <button class="link" id="fontDrop" type="button" hidden>حذف الخط الحالي</button>
+        <button class="link" id="fontDrop" type="button" hidden>حذف الخط الحالي</button><p>تنبيه: الخط المرفوع يظهر في المعاينة فقط، ولا يُحفظ للزوار في هذه النسخة.</p>
       </div>
       <div class="msg" id="editMsg" role="status" aria-live="polite"></div>
+      <div class="studio-box"><h2>📼 استوديو شكل الكاسيت</h2><p class="studio-tip">اختر تصميمًا مستوحى من الأشرطة القديمة. التغييرات تظهر في المعاينة قبل النشر.</p>
+        <label class="field"><span>التصميم</span><select id="styleIn"><option value="classic">الأصلي الكلاسيكي</option><option value="blue">الأزرق القديم</option><option value="cream">الكريمي العتيق</option><option value="red">الأحمر الشفاف</option><option value="yellow">الأصفر</option><option value="white">الأبيض القديم</option></select></label>
+        <label class="field"><span>وضع العرض</span><select id="themeIn"><option value="auto">حسب الجهاز</option><option value="dark">داكن</option><option value="light">فاتح</option></select></label>
+        <div class="studio-grid"><label>جسم الكاسيت <input type="color" id="shellIn" value="#29292b"></label><label>أزرار التشغيل <input type="color" id="buttonIn" value="#9a978e"></label><label>الخط الأول <input type="color" id="stripe1In" value="#5cc46b"></label><label>الخط الثاني <input type="color" id="stripe2In" value="#4cb59f"></label><label>الخط الثالث <input type="color" id="stripe3In" value="#3f7de0"></label></div>
+        <p class="studio-tip">التغييرات لا تظهر للزوار إلا بعد الضغط على «حفظ ونشر» من المعاينة.</p>
+      </div>
+      <div class="studio-box"><h2>📝 مزامنة الكلمات بالنقر</h2><p class="studio-tip">اكتب الكلمات بدون توقيت، كل سطر لحاله، ثم اضغط «مزامنة بالنقر».</p></div>
+      <div class="studio-box"><h2>📊 الإحصائيات</h2><p class="studio-tip">القسم جاهز للتوسعة، لكن أرقام الزيارات والتشغيل تحتاج إعداد تتبع آمن في قاعدة البيانات. لن نعرض أرقامًا وهمية.</p></div>
       <button class="cbtn primary" id="previewBtn" type="button">👁️ معاينة قبل النشر</button>
       <div class="row"><button class="cbtn primary" id="save" type="submit" disabled>حفظ ونشر</button><button class="cbtn" id="editClose" type="button">إغلاق</button><button class="cbtn" id="logout" type="button">خروج</button></div>
     </form>
@@ -440,12 +461,18 @@ const db=window.supabase?.createClient(URL_BASE,PUBLIC_KEY);
 const deck=$('cassette'),seek=$('seek'),nameEl=$('song'),fmtEl=$('fmt'),tCur=$('tCur'),tDur=$('tDur');
 const audio=new Audio();audio.preload='metadata';
 let settings={},lyrics=[],lastIndex=-2,isPlaying=false;
+const defaultStudio={style:'classic',theme:'auto',shell:'#29292b',button:'#9a978e',stripe1:'#5cc46b',stripe2:'#4cb59f',stripe3:'#3f7de0'};
+let studio={...defaultStudio};
+function studioFromForm(){return {style:$('styleIn').value,theme:$('themeIn').value,shell:$('shellIn').value,button:$('buttonIn').value,stripe1:$('stripe1In').value,stripe2:$('stripe2In').value,stripe3:$('stripe3In').value};}
+function studioPaint(v){studio={...defaultStudio,...v};deck.dataset.style=studio.style;for(const [key,css] of [['shell','--studio-shell'],['button','--studio-button'],['stripe1','--studio-a'],['stripe2','--studio-b'],['stripe3','--studio-c']])deck.style.setProperty(css,studio[key]);if(studio.theme==='auto')document.documentElement.removeAttribute('data-theme');else document.documentElement.dataset.theme=studio.theme;}
+function studioFill(v){for(const [key,id] of [['style','styleIn'],['theme','themeIn'],['shell','shellIn'],['button','buttonIn'],['stripe1','stripe1In'],['stripe2','stripe2In'],['stripe3','stripe3In']])$(id).value=(v||defaultStudio)[key]||defaultStudio[key];}
+function studioFromRow(row){return Object.fromEntries(Object.keys(defaultStudio).map(k=>[k,row?.['studio_'+k]||defaultStudio[k]]));}
  let previewActive=false,previewObjectUrl=null,previewDraft=null,previewFontUrl=null;
 const FMT={'audio/mpeg':'MP3','audio/mp4':'M4A','audio/wav':'WAV','audio/ogg':'OGG'};
 const fmt=t=>Math.floor(Math.max(0,t||0)/60)+':'+String(Math.floor(Math.max(0,t||0)%60)).padStart(2,'0');
 function validAudioUrl(raw){try{const u=new URL(raw);if(!['https:','http:'].includes(u.protocol))return false;const host=u.hostname.toLowerCase();if(/(^|\.)(youtube\.com|youtu\.be|soundcloud\.com|spotify\.com|drive\.google\.com|dropbox\.com)$/.test(host))return false;return true;}catch{return false;}}
 function parseLrc(raw){const result=[];String(raw||'').split(/\r?\n/).forEach(line=>{const matches=[...line.matchAll(/\[(\d+):(\d{2})(?:[.:](\d{1,3}))?\]/g)];const txt=line.replace(/\[\d+:\d{2}(?:[.:]\d{1,3})?\]/g,'').trim();matches.forEach(m=>result.push([+m[1]*60 + +m[2]+(m[3]?Number('0.'+m[3]):0),txt]));});return result.sort((a,b)=>a[0]-b[0]);}
-function toLrc(rows){return rows.map(([t,line])=>'['+String(Math.floor(t/60)).padStart(2,'0')+':'+(t%60).toFixed(2).padStart(5,'0')+'] '+line).join('\n');}
+function toLrc(rows){return rows.map(([t,line])=>{const cs=Math.max(0,Math.round(t*100));return '['+String(Math.floor(cs/6000)).padStart(2,'0')+':'+String(Math.floor(cs%6000/100)).padStart(2,'0')+'.'+String(cs%100).padStart(2,'0')+'] '+line;}).join('\n');}
 function renderLyrics(t){
  if(!lyrics.length)return;
  let i=-1;for(let j=0;j<lyrics.length;j++){if(lyrics[j][0]<=t)i=j;else break;}
@@ -465,7 +492,7 @@ function duration(){return audio.duration||0;}
 function currentTime(){return audio.currentTime||0;}
 function paint(){let d=duration(),t=currentTime(),p=d>0&&isFinite(d)?Math.min(1,t/d):0;seek.value=Math.round(p*1000);seek.style.setProperty('--pp',p*100+'%');tCur.textContent=fmt(t);tDur.textContent=fmt(d);$('packL').setAttribute('r',(47-9*p).toFixed(2));$('packR').setAttribute('r',(38+9*p).toFixed(2));renderLyrics(t);}
 function setPlaying(v){isPlaying=v;deck.classList.toggle('playing',v);$('icPlay').hidden=v;$('icPause').hidden=!v;}
-function apply(row,{temporary=false}={}){if(!temporary)settings=row||{};const display=row||{};audio.pause();setPlaying(false);const url=String(display.audio_url||'').trim();audio.src=url||'';if(url)audio.load();const title=String(display.title||'').trim();nameEl.textContent=title||'لا يوجد شريط بعد';fmtEl.textContent=url?(FMT[display.mime]||'AUDIO'):'—';$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(display.lyrics)?display.lyrics:parseLrc(display.lyrics);$('lyrics').hidden=!lyrics.length;lastIndex=-2;paint();}
+function apply(row,{temporary=false}={}){if(!temporary)settings=row||{};const display=row||{};studioPaint(temporary?(display.studio||studio):studioFromRow(display));audio.pause();setPlaying(false);const url=String(display.audio_url||'').trim();audio.src=url||'';if(url)audio.load();const title=String(display.title||'').trim();nameEl.textContent=title||'لا يوجد شريط بعد';fmtEl.textContent=url?(FMT[display.mime]||'AUDIO'):'—';$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(display.lyrics)?display.lyrics:parseLrc(display.lyrics);$('lyrics').hidden=!lyrics.length;lastIndex=-2;paint();}
 // Read the public cassette independently of the administrator's login session.
 // A logged-in session may have different RLS permissions from a public visitor.
 async function refresh(){
@@ -498,17 +525,23 @@ function close(){sheet.hidden=true;pwForm.hidden=true;editForm.hidden=true;}
 $('gate').onclick=async()=>{sheet.hidden=false;const {data}=await db.auth.getSession();if(data.session){await showEditor();}else{pwForm.hidden=false;editForm.hidden=true;}};
 $('pwClose').onclick=close;$('editClose').onclick=close;
 $('logout').onclick=async()=>{await db.auth.signOut();close();};
-async function showEditor(){const {data:{user}}=await db.auth.getUser();if(!user){msg($('pwMsg'),'يرجى تسجيل الدخول.',true);return;}const {data,error}=await db.from('cassette_admins').select('*').eq('user_id',user.id).limit(1);if(error||!data?.length){await db.auth.signOut();pwForm.hidden=false;msg($('pwMsg'),'هذا الحساب ليس مسؤولاً مخولاً.',true);return;}pwForm.hidden=true;editForm.hidden=false;$('current').textContent='الحالي: '+(settings.title||'بدون اسم');$('titleIn').value=settings.title||'';$('audioUrlIn').value='';$('lyr').value=Array.isArray(settings.lyrics)?toLrc(settings.lyrics):String(settings.lyrics||'');}
+async function showEditor(){const {data:{user}}=await db.auth.getUser();if(!user){msg($('pwMsg'),'يرجى تسجيل الدخول.',true);return;}const {data,error}=await db.from('cassette_admins').select('*').eq('user_id',user.id).limit(1);if(error||!data?.length){await db.auth.signOut();pwForm.hidden=false;msg($('pwMsg'),'هذا الحساب ليس مسؤولاً مخولاً.',true);return;}pwForm.hidden=true;editForm.hidden=false;$('current').textContent='الحالي: '+(settings.title||'بدون اسم');$('titleIn').value=settings.title||'';$('audioUrlIn').value='';$('lyr').value=Array.isArray(settings.lyrics)?toLrc(settings.lyrics):String(settings.lyrics||'');studioFill(studioFromRow(settings));}
 pwForm.onsubmit=async e=>{e.preventDefault();msg($('pwMsg'),'جارٍ تسجيل الدخول...');const {error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('pw').value});$('pw').value='';if(error){msg($('pwMsg'),'فشل تسجيل الدخول. تحقق من البريد وكلمة المرور.',true);return;}await showEditor();};
 $('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'اختيار ملف';};
 $('fontIn').onchange=()=>{$('fontName').textContent=$('fontIn').files[0]?.name||'اختيار خط';};
 $('fontDrop').onclick=()=>{$('fontIn').value='';$('fontName').textContent='بدون خط';};
-$('syncBtn').onclick=()=>msg($('editMsg'),'يمكنك إضافة أوقات LRC مباشرة. مزامنة النقر غير مفعّلة في هذه النسخة.',true);
+let syncLines=[],syncTimes=[],syncPosition=0;
+function syncDraw(){ $('syncMeta').textContent=(syncPosition+1)+' / '+syncLines.length;$('syncLine').textContent=syncLines[syncPosition]||'اكتملت المزامنة';$('syncNext').textContent=syncLines[syncPosition+1]||'';$('syncTap').disabled=syncPosition>=syncLines.length;}
+$('syncBtn').onclick=()=>{const raw=$('lyr').value.trim();syncLines=raw.split(/\r?\n/).map(x=>x.replace(/\[\d+:\d{2}(?:[.:]\d{1,3})?\]/g,'').trim()).filter(Boolean);if(!syncLines.length){msg($('editMsg'),'اكتب كلمات الأغنية أولاً، كل سطر لحاله.',true);return;}syncTimes=[];syncPosition=0;editForm.hidden=true;$('syncBox').hidden=false;syncDraw();};
+$('syncStart').onclick=async()=>{syncTimes=[];syncPosition=0;syncDraw();const direct=$('audioUrlIn').value.trim(),f=$('file').files[0];if(f&&direct){alert('اختر ملفًا أو رابطًا فقط.');return;}const url=direct||(f?URL.createObjectURL(f):settings.audio_url);if(!url){alert('حدد الأغنية أولاً.');return;}if(f){if(previewObjectUrl)URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=url;}audio.pause();audio.src=url;audio.load();audio.currentTime=0;try{await audio.play();$('syncStart').textContent='إعادة من البداية';}catch(e){alert('تعذر التشغيل: '+e.message);}};
+$('syncTap').onclick=()=>{if(syncPosition>=syncLines.length)return;syncTimes.push([audio.currentTime,syncLines[syncPosition]]);syncPosition++;syncDraw();if(syncPosition===syncLines.length){audio.pause();$('lyr').value=toLrc(syncTimes);$('syncBox').hidden=true;editForm.hidden=false;msg($('editMsg'),'اكتملت المزامنة! تقدر تعدّل الأوقات في مربع الكلمات، ثم تعاينها.');}};
+$('syncUndo').onclick=()=>{if(syncPosition>0){syncPosition--;syncTimes.pop();syncDraw();}};
+$('syncCancel').onclick=()=>{audio.pause();apply(settings);$('syncBox').hidden=true;editForm.hidden=false;};
 function storagePath(file){return 'tracks/'+Date.now()+'-'+Math.random().toString(36).slice(2)+'.'+(file.name.split('.').pop()||'mp3').replace(/[^a-z0-9]/gi,'');}
 function releasePreviewAssets(){if(previewObjectUrl){URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null;}if(previewFontUrl){URL.revokeObjectURL(previewFontUrl);previewFontUrl=null;}$('lyrics').style.removeProperty('font-family');}
 function endPreview(restore=true){
   previewActive=false;$('previewbar').hidden=true;audio.pause();
-  if(restore)apply(settings,{temporary:true});
+  if(restore)apply(settings);
   releasePreviewAssets();previewDraft=null;
 }
 function draftFromForm(){
@@ -522,7 +555,7 @@ function draftFromForm(){
   const url=direct||(file?URL.createObjectURL(file):String(settings.audio_url||''));
   if(!url)throw Error('اختر أغنية أو ضع رابطاً مباشراً.');
   const mime=file?(file.type||'audio/mpeg'):(direct?/\.m4a(?:[?#]|$)/i.test(direct)?'audio/mp4':/\.ogg(?:[?#]|$)/i.test(direct)?'audio/ogg':'audio/mpeg':settings.mime||'audio/mpeg');
-  return {title:$('titleIn').value.trim(),lyrics,file,direct,url,mime,font:$('fontIn').files[0]||null};
+  return {title:$('titleIn').value.trim(),lyrics,file,direct,url,mime,font:$('fontIn').files[0]||null,studio:studioFromForm()};
 }
 $('previewBtn').onclick=()=>{
   try{
@@ -530,7 +563,7 @@ $('previewBtn').onclick=()=>{
     const draft=draftFromForm();previewDraft=draft;
     if(draft.file)previewObjectUrl=draft.url;
     if(draft.font){previewFontUrl=URL.createObjectURL(draft.font);const font=new FontFace('CassettePreviewFont',`url("${previewFontUrl}")`);font.load().then(loaded=>{if(previewActive){document.fonts.add(loaded);$('lyrics').style.fontFamily='CassettePreviewFont';}}).catch(console.warn);}
-    previewActive=true;apply({title:draft.title,audio_url:draft.url,mime:draft.mime,lyrics:draft.lyrics},{temporary:true});
+    previewActive=true;apply({title:draft.title,audio_url:draft.url,mime:draft.mime,lyrics:draft.lyrics,studio:draft.studio},{temporary:true});
     sheet.hidden=true;$('previewbar').hidden=false;$('previewMsg').textContent='اضغط تشغيل على الكاسيت لتجربة الأغنية.';
   }catch(err){msg($('editMsg'),err.message,true);}
 };
@@ -542,7 +575,7 @@ $('publishPreview').onclick=async()=>{
   $('publishPreview').disabled=true;msg($('previewMsg'),'جارٍ النشر...');await publishDraft();
 };
 editForm.onsubmit=e=>{e.preventDefault();msg($('editMsg'),'استخدم زر «معاينة قبل النشر» أولاً.',true);};
-async function publishDraft(){const save=$('save');save.disabled=true;msg($('editMsg'),'جارٍ الحفظ...');try{const {data:{user}}=await db.auth.getUser();if(!user)throw Error('انتهت الجلسة. سجّل الدخول مجدداً.');let url=String(settings.audio_url||'');let mime=settings.mime||'audio/mpeg';const f=previewDraft.file,direct=previewDraft.direct;if(f&&direct)throw Error('اختر ملفاً أو رابطاً صوتياً مباشراً، وليس الاثنين معاً.');if(direct){if(!validAudioUrl(direct))throw Error('أدخل رابط HTTP أو HTTPS مباشر لملف صوتي، وليس رابط يوتيوب أو صفحة مشاركة.');url=direct;mime=/\.m4a(?:[?#]|$)/i.test(direct)?'audio/mp4':/\.ogg(?:[?#]|$)/i.test(direct)?'audio/ogg':'audio/mpeg';}else if(f){if(!f.type.startsWith('audio/')&&!/\.(mp3|m4a|aac|wav|ogg)$/i.test(f.name))throw Error('اختر ملفاً صوتياً.');if(f.size>45*1024*1024)throw Error('الحد الأقصى للملف 45 ميجابايت.');const path=storagePath(f);const {error:upErr}=await db.storage.from('cassette-audio').upload(path,f,{contentType:f.type||'audio/mpeg',upsert:false});if(upErr)throw upErr;url=db.storage.from('cassette-audio').getPublicUrl(path).data.publicUrl;mime=f.type||'audio/mpeg';}if(!url)throw Error('اختر ملفاً أو ضع رابطاً مباشراً لملف صوتي.');const rows=parseLrc(previewDraft.lyrics);if(previewDraft.lyrics.trim()&&!rows.length)throw Error('الكلمات تحتاج توقيت LRC أو اتركها فارغة.');const update={title:previewDraft.title,audio_url:url,lyrics:previewDraft.lyrics};const {data:updated,error}=await db.from('cassette_settings').update(update).eq('id',1).select('id,title,audio_url');
+async function publishDraft(){const save=$('save');save.disabled=true;msg($('editMsg'),'جارٍ الحفظ...');try{const {data:{user}}=await db.auth.getUser();if(!user)throw Error('انتهت الجلسة. سجّل الدخول مجدداً.');let url=String(settings.audio_url||'');let mime=settings.mime||'audio/mpeg';const f=previewDraft.file,direct=previewDraft.direct;if(f&&direct)throw Error('اختر ملفاً أو رابطاً صوتياً مباشراً، وليس الاثنين معاً.');if(direct){if(!validAudioUrl(direct))throw Error('أدخل رابط HTTP أو HTTPS مباشر لملف صوتي، وليس رابط يوتيوب أو صفحة مشاركة.');url=direct;mime=/\.m4a(?:[?#]|$)/i.test(direct)?'audio/mp4':/\.ogg(?:[?#]|$)/i.test(direct)?'audio/ogg':'audio/mpeg';}else if(f){if(!f.type.startsWith('audio/')&&!/\.(mp3|m4a|aac|wav|ogg)$/i.test(f.name))throw Error('اختر ملفاً صوتياً.');if(f.size>45*1024*1024)throw Error('الحد الأقصى للملف 45 ميجابايت.');const path=storagePath(f);const {error:upErr}=await db.storage.from('cassette-audio').upload(path,f,{contentType:f.type||'audio/mpeg',upsert:false});if(upErr)throw upErr;url=db.storage.from('cassette-audio').getPublicUrl(path).data.publicUrl;mime=f.type||'audio/mpeg';}if(!url)throw Error('اختر ملفاً أو ضع رابطاً مباشراً لملف صوتي.');const rows=parseLrc(previewDraft.lyrics);if(previewDraft.lyrics.trim()&&!rows.length)throw Error('الكلمات تحتاج توقيت LRC أو اتركها فارغة.');const update={title:previewDraft.title,audio_url:url,lyrics:previewDraft.lyrics};const selected=previewDraft.studio;const changed=Object.keys(defaultStudio).some(k=>selected[k]!==studioFromRow(settings)[k]);if(changed){const {error:columnCheck}=await db.from('cassette_settings').select('studio_style,studio_theme,studio_shell,studio_button,studio_stripe1,studio_stripe2,studio_stripe3').eq('id',1).limit(1);if(columnCheck)throw Error('لتنشر الشكل الجديد، نفّذ ملف SQL المرفق أولاً. لم يتم نشر أي تغيير.');for(const k of Object.keys(defaultStudio))update['studio_'+k]=selected[k];}const {data:updated,error}=await db.from('cassette_settings').update(update).eq('id',1).select('id,title,audio_url');
 if(error)throw error;
 if(!updated?.length)throw Error('لم يتم تعديل سجل الكاسيت. تحقق من صلاحيات UPDATE وسياسة RLS.');
 previewActive=false;const visible=await refresh();
