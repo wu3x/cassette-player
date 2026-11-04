@@ -215,6 +215,11 @@ body{
 .ly.cur.ly-enter{animation:lyric-glide .85s cubic-bezier(.22,1,.36,1) both}
 @keyframes lyric-glide{from{opacity:0;transform:translateY(12px) scale(.985);filter:blur(2px)}to{opacity:1;transform:translateY(0) scale(1);filter:blur(0)}}
 @media(prefers-reduced-motion:reduce){.ly.cur.ly-enter{animation:none}.ly.prev,.ly.next{transition:none}}
+/* Preview controls, visible only to the administrator. */
+.previewbar{position:fixed;z-index:12;left:12px;right:12px;bottom:max(14px,env(safe-area-inset-bottom));max-width:520px;margin:auto;padding:12px;background:var(--panel);color:var(--panel-ink);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 35px #0004;direction:rtl;font-family:var(--arabic)}
+.previewbar strong{display:block;text-align:center;margin-bottom:9px;font-size:14px}
+.previewbar .row{display:flex;gap:8px}.previewbar .cbtn{font-size:13px;min-width:0}
+.previewbar .msg{text-align:center;font-size:12px}
 /* admin sheet */
 .sheet{
   position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:var(--scrim);
@@ -403,7 +408,8 @@ body{
         <button class="link" id="fontDrop" type="button" hidden>حذف الخط الحالي</button>
       </div>
       <div class="msg" id="editMsg" role="status" aria-live="polite"></div>
-      <div class="row"><button class="cbtn primary" id="save" type="submit">حفظ</button><button class="cbtn" id="editClose" type="button">إغلاق</button><button class="cbtn" id="logout" type="button">خروج</button></div>
+      <button class="cbtn primary" id="previewBtn" type="button">👁️ معاينة قبل النشر</button>
+      <div class="row"><button class="cbtn primary" id="save" type="submit" disabled>حفظ ونشر</button><button class="cbtn" id="editClose" type="button">إغلاق</button><button class="cbtn" id="logout" type="button">خروج</button></div>
     </form>
     <div class="syncbox" id="syncBox" hidden>
       <h2>مزامنة بالنقر</h2>
@@ -414,6 +420,11 @@ body{
       <div class="row"><button class="cbtn" id="syncUndo" type="button">تراجع</button><button class="cbtn" id="syncCancel" type="button">إلغاء</button></div>
     </div>
   </div>
+</div>
+<div class="previewbar" id="previewbar" hidden>
+  <strong>🔒 وضع المعاينة — غير منشور</strong>
+  <div class="row"><button class="cbtn primary" id="publishPreview" type="button">حفظ ونشر</button><button class="cbtn" id="backPreview" type="button">رجوع للتعديل</button><button class="cbtn" id="cancelPreview" type="button">إلغاء</button></div>
+  <div class="msg" id="previewMsg" role="status" aria-live="polite"></div>
 </div>
 </template>
 <div id="root"></div>
@@ -429,6 +440,7 @@ const db=window.supabase?.createClient(URL_BASE,PUBLIC_KEY);
 const deck=$('cassette'),seek=$('seek'),nameEl=$('song'),fmtEl=$('fmt'),tCur=$('tCur'),tDur=$('tDur');
 const audio=new Audio();audio.preload='metadata';
 let settings={},lyrics=[],lastIndex=-2,isPlaying=false;
+ let previewActive=false,previewObjectUrl=null,previewDraft=null,previewFontUrl=null;
 const FMT={'audio/mpeg':'MP3','audio/mp4':'M4A','audio/wav':'WAV','audio/ogg':'OGG'};
 const fmt=t=>Math.floor(Math.max(0,t||0)/60)+':'+String(Math.floor(Math.max(0,t||0)%60)).padStart(2,'0');
 function validAudioUrl(raw){try{const u=new URL(raw);if(!['https:','http:'].includes(u.protocol))return false;const host=u.hostname.toLowerCase();if(/(^|\.)(youtube\.com|youtu\.be|soundcloud\.com|spotify\.com|drive\.google\.com|dropbox\.com)$/.test(host))return false;return true;}catch{return false;}}
@@ -453,10 +465,11 @@ function duration(){return audio.duration||0;}
 function currentTime(){return audio.currentTime||0;}
 function paint(){let d=duration(),t=currentTime(),p=d>0&&isFinite(d)?Math.min(1,t/d):0;seek.value=Math.round(p*1000);seek.style.setProperty('--pp',p*100+'%');tCur.textContent=fmt(t);tDur.textContent=fmt(d);$('packL').setAttribute('r',(47-9*p).toFixed(2));$('packR').setAttribute('r',(38+9*p).toFixed(2));renderLyrics(t);}
 function setPlaying(v){isPlaying=v;deck.classList.toggle('playing',v);$('icPlay').hidden=v;$('icPause').hidden=!v;}
-function apply(row){settings=row||{};audio.pause();setPlaying(false);const url=String(settings.audio_url||'').trim();audio.src=url||'';if(url)audio.load();const title=String(settings.title||'').trim();nameEl.textContent=title||'لا يوجد شريط بعد';fmtEl.textContent=url?(FMT[settings.mime]||'AUDIO'):'—';$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(settings.lyrics)?settings.lyrics:parseLrc(settings.lyrics);$('lyrics').hidden=!lyrics.length;lastIndex=-2;paint();}
+function apply(row,{temporary=false}={}){if(!temporary)settings=row||{};const display=row||{};audio.pause();setPlaying(false);const url=String(display.audio_url||'').trim();audio.src=url||'';if(url)audio.load();const title=String(display.title||'').trim();nameEl.textContent=title||'لا يوجد شريط بعد';fmtEl.textContent=url?(FMT[display.mime]||'AUDIO'):'—';$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(display.lyrics)?display.lyrics:parseLrc(display.lyrics);$('lyrics').hidden=!lyrics.length;lastIndex=-2;paint();}
 // Read the public cassette independently of the administrator's login session.
 // A logged-in session may have different RLS permissions from a public visitor.
 async function refresh(){
+  if(previewActive)return true;
   try{
     const response=await fetch(URL_BASE+'/rest/v1/cassette_settings?id=eq.1&select=*',{
       headers:{apikey:PUBLIC_KEY,Accept:'application/json'},cache:'no-store'
@@ -492,14 +505,51 @@ $('fontIn').onchange=()=>{$('fontName').textContent=$('fontIn').files[0]?.name||
 $('fontDrop').onclick=()=>{$('fontIn').value='';$('fontName').textContent='بدون خط';};
 $('syncBtn').onclick=()=>msg($('editMsg'),'يمكنك إضافة أوقات LRC مباشرة. مزامنة النقر غير مفعّلة في هذه النسخة.',true);
 function storagePath(file){return 'tracks/'+Date.now()+'-'+Math.random().toString(36).slice(2)+'.'+(file.name.split('.').pop()||'mp3').replace(/[^a-z0-9]/gi,'');}
-editForm.onsubmit=async e=>{e.preventDefault();const save=$('save');save.disabled=true;msg($('editMsg'),'جارٍ الحفظ...');try{const {data:{user}}=await db.auth.getUser();if(!user)throw Error('انتهت الجلسة. سجّل الدخول مجدداً.');let url=String(settings.audio_url||'');let mime=settings.mime||'audio/mpeg';const f=$('file').files[0],direct=$('audioUrlIn').value.trim();if(f&&direct)throw Error('اختر ملفاً أو رابطاً صوتياً مباشراً، وليس الاثنين معاً.');if(direct){if(!validAudioUrl(direct))throw Error('أدخل رابط HTTP أو HTTPS مباشر لملف صوتي، وليس رابط يوتيوب أو صفحة مشاركة.');url=direct;mime=/\.m4a(?:[?#]|$)/i.test(direct)?'audio/mp4':/\.ogg(?:[?#]|$)/i.test(direct)?'audio/ogg':'audio/mpeg';}else if(f){if(!f.type.startsWith('audio/')&&!/\.(mp3|m4a|aac|wav|ogg)$/i.test(f.name))throw Error('اختر ملفاً صوتياً.');if(f.size>45*1024*1024)throw Error('الحد الأقصى للملف 45 ميجابايت.');const path=storagePath(f);const {error:upErr}=await db.storage.from('cassette-audio').upload(path,f,{contentType:f.type||'audio/mpeg',upsert:false});if(upErr)throw upErr;url=db.storage.from('cassette-audio').getPublicUrl(path).data.publicUrl;mime=f.type||'audio/mpeg';}if(!url)throw Error('اختر ملفاً أو ضع رابطاً مباشراً لملف صوتي.');const rows=parseLrc($('lyr').value);if($('lyr').value.trim()&&!rows.length)throw Error('الكلمات تحتاج توقيت LRC أو اتركها فارغة.');const update={title:$('titleIn').value.trim(),audio_url:url,lyrics:$('lyr').value.trim()};const {data:updated,error}=await db.from('cassette_settings').update(update).eq('id',1).select('id,title,audio_url');
+function releasePreviewAssets(){if(previewObjectUrl){URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null;}if(previewFontUrl){URL.revokeObjectURL(previewFontUrl);previewFontUrl=null;}$('lyrics').style.removeProperty('font-family');}
+function endPreview(restore=true){
+  previewActive=false;$('previewbar').hidden=true;audio.pause();
+  if(restore)apply(settings,{temporary:true});
+  releasePreviewAssets();previewDraft=null;
+}
+function draftFromForm(){
+  const file=$('file').files[0]||null,direct=$('audioUrlIn').value.trim();
+  if(file&&direct)throw Error('اختر ملفاً أو رابطاً صوتياً، وليس الاثنين.');
+  if(direct&&!validAudioUrl(direct))throw Error('الرابط يجب أن يكون رابطاً مباشراً لملف صوتي.');
+  if(file&&(!file.type.startsWith('audio/')&&!/\.(mp3|m4a|aac|wav|ogg)$/i.test(file.name)))throw Error('اختر ملفاً صوتياً صالحاً.');
+  if(file&&file.size>45*1024*1024)throw Error('الملف يتجاوز 45 ميجابايت.');
+  const lyrics=$('lyr').value.trim();
+  if(lyrics&&!parseLrc(lyrics).length)throw Error('الكلمات تحتاج توقيت LRC صحيح.');
+  const url=direct||(file?URL.createObjectURL(file):String(settings.audio_url||''));
+  if(!url)throw Error('اختر أغنية أو ضع رابطاً مباشراً.');
+  const mime=file?(file.type||'audio/mpeg'):(direct?/\.m4a(?:[?#]|$)/i.test(direct)?'audio/mp4':/\.ogg(?:[?#]|$)/i.test(direct)?'audio/ogg':'audio/mpeg':settings.mime||'audio/mpeg');
+  return {title:$('titleIn').value.trim(),lyrics,file,direct,url,mime,font:$('fontIn').files[0]||null};
+}
+$('previewBtn').onclick=()=>{
+  try{
+    if(previewObjectUrl){URL.revokeObjectURL(previewObjectUrl);previewObjectUrl=null;}
+    const draft=draftFromForm();previewDraft=draft;
+    if(draft.file)previewObjectUrl=draft.url;
+    if(draft.font){previewFontUrl=URL.createObjectURL(draft.font);const font=new FontFace('CassettePreviewFont',`url("${previewFontUrl}")`);font.load().then(loaded=>{if(previewActive){document.fonts.add(loaded);$('lyrics').style.fontFamily='CassettePreviewFont';}}).catch(console.warn);}
+    previewActive=true;apply({title:draft.title,audio_url:draft.url,mime:draft.mime,lyrics:draft.lyrics},{temporary:true});
+    sheet.hidden=true;$('previewbar').hidden=false;$('previewMsg').textContent='اضغط تشغيل على الكاسيت لتجربة الأغنية.';
+  }catch(err){msg($('editMsg'),err.message,true);}
+};
+$('backPreview').onclick=()=>{endPreview();sheet.hidden=false;pwForm.hidden=true;editForm.hidden=false;};
+$('cancelPreview').onclick=()=>{endPreview();close();};
+$('publishPreview').onclick=async()=>{
+  if(!previewActive||!previewDraft)return;
+  if(!confirm('هل تريد حفظ الأغنية ونشرها الآن لجميع الزوار؟'))return;
+  $('publishPreview').disabled=true;msg($('previewMsg'),'جارٍ النشر...');await publishDraft();
+};
+editForm.onsubmit=e=>{e.preventDefault();msg($('editMsg'),'استخدم زر «معاينة قبل النشر» أولاً.',true);};
+async function publishDraft(){const save=$('save');save.disabled=true;msg($('editMsg'),'جارٍ الحفظ...');try{const {data:{user}}=await db.auth.getUser();if(!user)throw Error('انتهت الجلسة. سجّل الدخول مجدداً.');let url=String(settings.audio_url||'');let mime=settings.mime||'audio/mpeg';const f=previewDraft.file,direct=previewDraft.direct;if(f&&direct)throw Error('اختر ملفاً أو رابطاً صوتياً مباشراً، وليس الاثنين معاً.');if(direct){if(!validAudioUrl(direct))throw Error('أدخل رابط HTTP أو HTTPS مباشر لملف صوتي، وليس رابط يوتيوب أو صفحة مشاركة.');url=direct;mime=/\.m4a(?:[?#]|$)/i.test(direct)?'audio/mp4':/\.ogg(?:[?#]|$)/i.test(direct)?'audio/ogg':'audio/mpeg';}else if(f){if(!f.type.startsWith('audio/')&&!/\.(mp3|m4a|aac|wav|ogg)$/i.test(f.name))throw Error('اختر ملفاً صوتياً.');if(f.size>45*1024*1024)throw Error('الحد الأقصى للملف 45 ميجابايت.');const path=storagePath(f);const {error:upErr}=await db.storage.from('cassette-audio').upload(path,f,{contentType:f.type||'audio/mpeg',upsert:false});if(upErr)throw upErr;url=db.storage.from('cassette-audio').getPublicUrl(path).data.publicUrl;mime=f.type||'audio/mpeg';}if(!url)throw Error('اختر ملفاً أو ضع رابطاً مباشراً لملف صوتي.');const rows=parseLrc(previewDraft.lyrics);if(previewDraft.lyrics.trim()&&!rows.length)throw Error('الكلمات تحتاج توقيت LRC أو اتركها فارغة.');const update={title:previewDraft.title,audio_url:url,lyrics:previewDraft.lyrics};const {data:updated,error}=await db.from('cassette_settings').update(update).eq('id',1).select('id,title,audio_url');
 if(error)throw error;
 if(!updated?.length)throw Error('لم يتم تعديل سجل الكاسيت. تحقق من صلاحيات UPDATE وسياسة RLS.');
-const visible=await refresh();
+previewActive=false;const visible=await refresh();
 if(!visible||settings.audio_url!==url){
   throw Error('تم تحديث السجل، لكن القراءة العامة لم تُظهر الأغنية الجديدة. تحقق من صلاحيات SELECT لدور anon وسياسة RLS.');
 }
-msg($('editMsg'),'تم الحفظ والتأكد من ظهور الأغنية للزوار.');}catch(err){console.error(err);msg($('editMsg'),err.message||'فشل الحفظ.',true);}finally{save.disabled=false;}};
+endPreview(false);close();}catch(err){console.error(err);msg($('previewMsg'),err.message||'فشل الحفظ.',true);previewActive=true;}finally{save.disabled=false;$('publishPreview').disabled=false;}}
 await refresh();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
 })();
