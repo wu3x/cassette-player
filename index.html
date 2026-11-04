@@ -552,50 +552,74 @@ $('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'ا�
 
 // Admin-only discovery. Public playback and database are untouched.
 // Audius is a browser-accessible source also used by multi-source clients such as muffon.
-let musicSearchNonce=0,musicListen=null;
-$('musicSearch').onclick=async()=>{
- const q=$('musicQuery').value.trim(),results=$('musicResults'),nonce=++musicSearchNonce;
- results.replaceChildren();
- if(musicListen){musicListen.pause();musicListen=null;}
- if(!q){msg($('musicMsg'),'اكتب اسم أغنية أو فنان.',true);return;}
- $('musicLoading').hidden=false;$('musicSearch').disabled=true;$('musicMsg').textContent='';
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
- try{
-  const response=await fetch('https://api.audius.co/v1/tracks/search?query='+encodeURIComponent(q)+'&limit=15',{signal:controller.signal,headers:{Accept:'application/json'}});
-  if(!response.ok)throw Error('HTTP '+response.status);
-  const body=await response.json();
-  if(nonce!==musicSearchNonce)return;
-  const hits=Array.isArray(body.data)?body.data:[];
-  if(!hits.length){msg($('musicMsg'),'ما حصلنا نتائج لهذا البحث في Audius. جرّب اسم الفنان بالإنجليزي أو كلمة ثانية.');return;}
-  for(const hit of hits){
-   if(!hit.id)continue;
-   const url='https://api.audius.co/v1/tracks/'+encodeURIComponent(hit.id)+'/stream';
-   const item=document.createElement('div');item.className='music-hit';
-   const title=document.createElement('strong');title.textContent=hit.title||'بدون عنوان';
-   const artist=document.createElement('small');artist.textContent=hit.user?.name||hit.user?.handle||'';
-   const row=document.createElement('div');row.className='row';
-   const listen=document.createElement('button');listen.type='button';listen.className='cbtn';listen.textContent='▶ استماع';
-   listen.onclick=async()=>{
-    if(musicListen&&!musicListen.paused&&musicListen.src===url){musicListen.pause();listen.textContent='▶ استماع';return;}
-    if(musicListen)musicListen.pause();
-    musicListen=new Audio(url);musicListen.preload='none';
-    listen.textContent='جارٍ التشغيل...';
-    try{await musicListen.play();listen.textContent='⏸ إيقاف';musicListen.onended=()=>listen.textContent='▶ استماع';}
-    catch(e){listen.textContent='▶ استماع';msg($('musicMsg'),'تعذر تشغيل هذا المقطع من Audius. جرّب نتيجة أخرى.',true);}
-   };
-   const choose=document.createElement('button');choose.type='button';choose.className='cbtn primary';choose.textContent='📼 معاينة بالكاسيت';
-   choose.onclick=()=>{
-    if(musicListen){musicListen.pause();musicListen=null;}
-    $('file').value='';$('fileName').textContent='ملف صوتي، حتى 45 ميجابايت';
-    $('audioUrlIn').value=url;$('titleIn').value=[hit.user?.name,hit.title].filter(Boolean).join(' — ').slice(0,120);
-    $('previewBtn').click();
-   };
-   row.append(listen,choose);item.append(title,artist,row);results.append(item);
+// Harmonix-derived server-side search. Search metadata never masquerades as an audio stream.
+const SEARCH_ENDPOINT_KEY='cassette_harmonix_search_endpoint';
+let musicSearchNonce=0;
+const musicSection=$('musicQuery').closest('.music-library');
+const endpointField=document.createElement('label');
+endpointField.className='field';
+const endpointLabel=document.createElement('span');endpointLabel.textContent='عنوان خادم البحث (HTTPS)';
+const endpointInput=document.createElement('input');
+endpointInput.id='harmonixEndpoint';endpointInput.type='url';endpointInput.inputMode='url';
+endpointInput.placeholder='https://your-search-service.example.com';
+endpointInput.value=localStorage.getItem(SEARCH_ENDPOINT_KEY)||'';
+const endpointHelp=document.createElement('small');
+endpointHelp.textContent='أضف رابط الخادم بعد نشره. يُحفظ على جهازك فقط، ولا يُنشر للزوار.';
+endpointField.append(endpointLabel,endpointInput,endpointHelp);
+musicSection.insertBefore(endpointField,$('musicQuery').closest('label'));
+endpointInput.addEventListener('change',()=>{
+  const value=endpointInput.value.trim().replace(/\\/$/,'');
+  if(value&&!/^https:\/\/[^\s/]+(?:\/[^\s]*)?$/i.test(value)){
+    msg($('musicMsg'),'عنوان الخادم لازم يبدأ بـ https://',true);return;
   }
-  msg($('musicMsg'),'ظهرت نتائج Audius. جرّب الاستماع أو المعاينة قبل النشر.');
- }catch(e){
-  if(nonce===musicSearchNonce)msg($('musicMsg'),'تعذر البحث من هذا المتصفح أو المصدر غير متاح الآن. لم يتم تغيير الكاسيت المنشور.',true);
- }finally{clearTimeout(timer);if(nonce===musicSearchNonce){$('musicLoading').hidden=true;$('musicSearch').disabled=false;}}
+  localStorage.setItem(SEARCH_ENDPOINT_KEY,value);
+  endpointInput.value=value;
+});
+const loadingText=$('musicLoading').querySelector('small');
+if(loadingText)loadingText.textContent='جارٍ البحث عبر Harmonix...';
+const libraryTip=musicSection.querySelector('.studio-tip');
+if(libraryTip)libraryTip.textContent='البحث يستخدم طريقة Harmonix في YouTube Music. النتائج معلومات وروابط للمصدر وليست ملفات صوتية مباشرة؛ نشر أغنية بالكاسيت يتطلب رابط صوت مصرحًا بتشغيله أو رفع ملف.';
+$('musicSearch').onclick=async()=>{
+  const q=$('musicQuery').value.trim(),results=$('musicResults'),nonce=++musicSearchNonce;
+  results.replaceChildren();
+  if(!q){msg($('musicMsg'),'اكتب اسم أغنية أو فنان.',true);return;}
+  const endpoint=endpointInput.value.trim().replace(/\\/$/,'');
+  if(!/^https:\/\/[^\s/]+(?:\/[^\s]*)?$/i.test(endpoint)){
+    msg($('musicMsg'),'أضف رابط خادم Harmonix HTTPS أولًا. البحث ما يشتغل قبل استضافة الخادم.',true);return;
+  }
+  $('musicLoading').hidden=false;$('musicSearch').disabled=true;$('musicMsg').textContent='';
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+  try{
+    const response=await fetch(endpoint+'/api/search?q='+encodeURIComponent(q),{signal:controller.signal,headers:{Accept:'application/json'}});
+    if(!response.ok)throw Error('HTTP '+response.status);
+    const body=await response.json();
+    if(nonce!==musicSearchNonce)return;
+    const hits=Array.isArray(body.tracks)?body.tracks:[];
+    if(!hits.length){msg($('musicMsg'),'ما ظهرت نتائج. جرّب كتابة أخرى.');return;}
+    for(const hit of hits){
+      if(!hit.id||hit.source!=='ytmusic')continue;
+      const item=document.createElement('div');item.className='music-hit';
+      const title=document.createElement('strong');title.textContent=hit.title||'بدون عنوان';
+      const artist=document.createElement('small');artist.textContent=hit.artist||'';
+      const row=document.createElement('div');row.className='row';
+      const open=document.createElement('a');open.className='cbtn';open.textContent='فتح المصدر';
+      open.href='https://music.youtube.com/watch?v='+encodeURIComponent(hit.id);
+      open.target='_blank';open.rel='noopener noreferrer';
+      const choose=document.createElement('button');choose.type='button';choose.className='cbtn primary';
+      choose.textContent='استخدام الاسم';
+      choose.onclick=()=>{
+        $('titleIn').value=[hit.artist,hit.title].filter(Boolean).join(' — ').slice(0,80);
+        msg($('musicMsg'),'تم تعبئة الاسم. لتشغيل الأغنية على الكاسيت أضف ملفًا صوتيًا تملك حق استخدامه أو رابطًا مباشرًا مصرحًا به، ثم اضغط معاينة.');
+      };
+      row.append(open,choose);item.append(title,artist,row);results.append(item);
+    }
+    msg($('musicMsg'),'نتائج البحث جاهزة. لا يمكن تشغيل روابط YouTube Music مباشرة في الكاسيت.');
+  }catch(e){
+    if(nonce===musicSearchNonce)msg($('musicMsg'),'تعذر الاتصال بخادم البحث. تأكد من عنوان HTTPS وتشغيل الخدمة والسماح لموقع GitHub Pages بالاتصال.',true);
+  }finally{
+    clearTimeout(timer);
+    if(nonce===musicSearchNonce){$('musicLoading').hidden=true;$('musicSearch').disabled=false;}
+  }
 };
 $('musicQuery').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('musicSearch').click();}});
 let syncLines=[],syncTimes=[],syncPosition=0;

@@ -1,0 +1,14 @@
+{
+  "name": "cassette-harmonix-search-service",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "youtubei.js": "^17.0.1"
+  }
+}

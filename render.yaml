@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: cassette-harmonix-search
+    runtime: node
+    rootDir: harmonix-service
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: ALLOWED_ORIGIN
+        value: https://wu3x.github.io
