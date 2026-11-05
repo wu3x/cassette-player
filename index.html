@@ -435,7 +435,7 @@ body{background:var(--bg);transition:background .25s ease}
       <label class="field"><span>اسم الأغنية على الكاسيت</span>
         <input id="titleIn" type="text" autocomplete="off" maxlength="80">
       </label>
-      <div class="field"><span>كلمات الأغنية (اختياري)</span><span id="lyricsLookupStatus" role="status" aria-live="polite" style="font-size:12px;color:#a9adb7;display:none;align-items:center;gap:7px;margin:6px 0"></span>
+      <div class="field"><span>كلمات الأغنية (اختياري)</span><button type="button" id="lyricsFetchBtn" class="cbtn" style="font-size:11px;padding:5px 10px;margin:5px 0">↻ جلب الكلمات تلقائياً</button><span id="lyricsLookupStatus" role="status" aria-live="polite" style="font-size:12px;color:#a9adb7;display:none;align-items:center;gap:7px;margin:6px 0"></span>
         <textarea id="lyr" dir="auto" spellcheck="false" placeholder="[00:12.50] السطر الأول&#10;[00:17.00] السطر الثاني"></textarea>
         <p>الصق الكلمات بصيغة LRC مع توقيت بداية كل سطر.</p>
         <button class="cbtn" id="syncBtn" type="button">مزامنة بالنقر</button>
@@ -566,7 +566,7 @@ const INVIDIOUS_SERVERS=[
  'https://iv.melmac.space',
  'https://invidious.privacydev.net'
 ];
-let musicSearchNonce=0,activeInvidiousController=null,searchServerStart=0,activeMusicChoice=0;
+let musicSearchNonce=0,activeInvidiousController=null,searchServerStart=0,activeMusicChoice=0,inlineMusicAudio=new Audio();
 let lyricsLookupNonce=0,lyricsLookupController=null;
 function lyricsLookupState(message,loading=false,success=false){
  const el=$('lyricsLookupStatus');el.style.display='flex';el.style.color=success?'#80d5a5':'#a9adb7';
@@ -611,6 +611,7 @@ async function fetchSongLyrics(title,artist){
  }
 }
 
+$('lyricsFetchBtn').onclick=()=>{const title=$('titleIn').value.trim();if(!title){lyricsLookupState('اختر أغنية أولاً.');return;}fetchSongLyrics(title,'');};
 const serverLabel=i=>'السيرفر '+(i+1)+' من '+INVIDIOUS_SERVERS.length;
 function invidiousStatus(message,color){const el=$('pipedServerStatus');el.textContent=message;el.style.color=color||'#a9adb7';}
 function invidiousId(item){
@@ -659,7 +660,9 @@ async function searchInvidious(query,start,signal,automatic){
 async function runMusicSearch(start=0,automatic=true){
  const q=$('musicQuery').value.trim(),results=$('musicResults'),nonce=++musicSearchNonce;
  activeInvidiousController?.abort();activeInvidiousController=new AbortController();
+ inlineMusicAudio.pause();inlineMusicAudio.removeAttribute('src');inlineMusicAudio.load();
  results.replaceChildren();
+ if(!automatic){searchServerStart=start;invidiousStatus('⏳ الانتقال إلى '+serverLabel(start)+'...','#e0bd70');}
  if(!q){msg($('musicMsg'),'اكتب اسم أغنية أو فنان.',true);return;}
  $('musicLoading').hidden=false;$('musicSearch').disabled=true;$('musicMsg').textContent='';
  try{
@@ -676,39 +679,58 @@ async function runMusicSearch(start=0,automatic=true){
    const row=document.createElement('div');row.className='row';
    const choose=document.createElement('button');choose.type='button';choose.className='cbtn primary';choose.textContent='📼 معاينة بالكاسيت';
    const listen=document.createElement('button');listen.type='button';listen.className='cbtn';listen.textContent='▶ استماع';
-   async function selectSong(autoplay){
+   const inlineStatus=document.createElement('small');inlineStatus.style.cssText='display:block;font-size:12px;margin:5px 0;color:#a9adb7';
+   async function resolveSelectedAudio(){
+    const data=await invidiousJSON(index,'/api/v1/videos/'+encodeURIComponent(id),null,13000);
+    if(data.error)throw Error(String(data.error));
+    return invidiousAudio(data.adaptiveFormats,index);
+   }
+   async function selectSong(mode){
     const chosen=++activeMusicChoice;
-    fetchSongLyrics(hit.title||'',hit.author||'');
     listen.disabled=true;choose.disabled=true;
-    invidiousStatus('⏳ '+serverLabel(index)+' — تجهيز الصوت...','#e0bd70');
+    inlineStatus.textContent='جارٍ تجهيز الصوت من '+serverLabel(index)+'...';
+    fetchSongLyrics(hit.title||'',hit.author||'');
     try{
-     const data=await invidiousJSON(index,'/api/v1/videos/'+encodeURIComponent(id),null,13000);
-     if(data.error)throw Error(String(data.error));
-     const url=invidiousAudio(data.adaptiveFormats,index);
+     const url=await resolveSelectedAudio();
      if(chosen!==activeMusicChoice)return;
      $('file').value='';$('fileName').textContent='ملف صوتي، حتى 45 ميجابايت';
      $('audioUrlIn').value=url;
      $('titleIn').value=[hit.author,hit.title].filter(Boolean).join(' — ').slice(0,80);
-     $('previewBtn').click();
-     if(!previewActive)throw Error('Cassette preview failed');
-     audio.load();
-     if(autoplay)await audio.play();
-     invidiousStatus('✓ '+serverLabel(index)+' — '+(autoplay?'يعمل':'الصوت جاهز'),'#80d5a5');
-     $('previewMsg').textContent=autoplay?'يتم تشغيل الأغنية في الكاسيت.':'اضغط تشغيل بالكاسيت للاستماع.';
+     if(mode==='listen'){
+      audio.pause();
+      inlineMusicAudio.pause();
+      inlineMusicAudio.src=url;
+      inlineMusicAudio.load();
+      await inlineMusicAudio.play();
+      inlineStatus.textContent='✓ يتم الاستماع هنا — اضغط إيقاف لإيقاف الصوت';
+      listen.textContent='■ إيقاف';
+     }else{
+      inlineMusicAudio.pause();inlineMusicAudio.removeAttribute('src');inlineMusicAudio.load();
+      listen.textContent='▶ استماع';
+      $('previewBtn').click();
+      if(!previewActive)throw Error('Cassette preview failed');
+      audio.load();
+      inlineStatus.textContent='✓ الأغنية جاهزة في الكاسيت';
+     }
     }catch(e){
-     console.error('[Cassette Invidious] Audio failed',{server:INVIDIOUS_SERVERS[index],videoId:id,audioError:audio.error?.code},e);
-     invidiousStatus('✕ '+serverLabel(index)+' — فشل تشغيل الصوت','#ff8e86');
-     msg($('musicMsg'),'تعذر تشغيل الأغنية من هذا السيرفر. اضغط «جرّب السيرفر التالي» ثم اختر الأغنية مجددًا.',true);
-     $('previewMsg').textContent='تعذر تشغيل الصوت. ارجع للبحث واضغط «جرّب السيرفر التالي».';
+     console.error('[Cassette Invidious] Audio failed',{server:INVIDIOUS_SERVERS[index],videoId:id,mode},e);
+     inlineStatus.textContent='✕ فشل تشغيل الصوت. اضغط «جرّب السيرفر التالي» ثم اختر الأغنية.';
+     msg($('musicMsg'),'تعذر تشغيل الأغنية. اضغط «جرّب السيرفر التالي» ثم اخترها مجددًا.',true);
     }finally{listen.disabled=false;choose.disabled=false;}
    }
-   listen.onclick=()=>selectSong(true);
-   choose.onclick=()=>selectSong(false);
-   row.append(listen,choose);item.append(title,artist,row);results.append(item);
+   listen.onclick=()=>{
+    if(!inlineMusicAudio.paused&&listen.textContent.includes('إيقاف')){
+     inlineMusicAudio.pause();listen.textContent='▶ استماع';inlineStatus.textContent='تم إيقاف الاستماع.';return;
+    }
+    selectSong('listen');
+   };
+   choose.onclick=()=>selectSong('preview');
+   inlineMusicAudio.addEventListener('error',()=>{if(!inlineMusicAudio.src)return;inlineStatus.textContent='✕ تعذر تشغيل الصوت. جرّب السيرفر التالي.';console.error('[Cassette] Inline audio error',inlineMusicAudio.error);},{once:true});
+   row.append(listen,choose);item.append(title,artist,row,inlineStatus);results.append(item);
   }
   msg($('musicMsg'),'اختر أغنية للاستماع. إذا لم تعمل، اضغط «جرّب السيرفر التالي».');
  }catch(e){
-  if(nonce===musicSearchNonce){invidiousStatus('✕ السيرفر غير متاح','#ff8e86');msg($('musicMsg'),automatic?'تعذر البحث في سيرفرات Invidious الحالية.':'هذا السيرفر لا يستجيب. اضغط «جرّب السيرفر التالي» مرة أخرى.',true);}
+  if(nonce===musicSearchNonce){invidiousStatus('✕ '+serverLabel(start)+' غير متاح','#ff8e86');msg($('musicMsg'),automatic?'تعذر البحث في سيرفرات Invidious الحالية.':'هذا السيرفر لا يستجيب. اضغط «جرّب السيرفر التالي» مرة أخرى.',true);}
  }finally{if(nonce===musicSearchNonce){$('musicLoading').hidden=true;$('musicSearch').disabled=false;}}
 }
 $('musicSearch').onclick=()=>runMusicSearch(0,true);
