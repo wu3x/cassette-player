@@ -289,7 +289,8 @@ body{
   .spin,.ticks,.shake,.ly.cur.pop{animation:none}
   .btn{transition:none}
 }
-.music-progress-fill{height:100%;width:35%;background:#55bfa3;animation:music-progress 1.4s ease-in-out infinite alternate}@keyframes music-progress{from{transform:translateX(-100%)}to{transform:translateX(310%)}}</style>
+.music-progress-fill{height:100%;width:35%;background:#55bfa3;animation:music-progress 1.4s ease-in-out infinite alternate}@keyframes music-progress{from{transform:translateX(-100%)}to{transform:translateX(310%)}}@keyframes lyricsLookupSpin{to{transform:rotate(360deg)}}
+</style>
 <style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}
 /* Refined compact cassette studio — stable mobile layout */
 :root { --bg:#0d0e11;--ink:#f6f5f2;--muted:#9a9ba3;--panel:#1b1d22;--panel-ink:#f7f7f7;--panel-muted:#b2b3b9;--line:#383b43;--scrim:rgba(0,0,0,.76);--shadow:rgba(0,0,0,.72);color-scheme:dark }
@@ -434,7 +435,7 @@ body{background:var(--bg);transition:background .25s ease}
       <label class="field"><span>اسم الأغنية على الكاسيت</span>
         <input id="titleIn" type="text" autocomplete="off" maxlength="80">
       </label>
-      <div class="field"><span>كلمات الأغنية (اختياري)</span>
+      <div class="field"><span>كلمات الأغنية (اختياري)</span><span id="lyricsLookupStatus" role="status" aria-live="polite" style="font-size:12px;color:#a9adb7;display:none;align-items:center;gap:7px;margin:6px 0"></span>
         <textarea id="lyr" dir="auto" spellcheck="false" placeholder="[00:12.50] السطر الأول&#10;[00:17.00] السطر الثاني"></textarea>
         <p>الصق الكلمات بصيغة LRC مع توقيت بداية كل سطر.</p>
         <button class="cbtn" id="syncBtn" type="button">مزامنة بالنقر</button>
@@ -566,6 +567,50 @@ const INVIDIOUS_SERVERS=[
  'https://invidious.privacydev.net'
 ];
 let musicSearchNonce=0,activeInvidiousController=null,searchServerStart=0,activeMusicChoice=0;
+let lyricsLookupNonce=0,lyricsLookupController=null;
+function lyricsLookupState(message,loading=false,success=false){
+ const el=$('lyricsLookupStatus');el.style.display='flex';el.style.color=success?'#80d5a5':'#a9adb7';
+ el.replaceChildren();
+ if(loading){const spin=document.createElement('span');spin.style.cssText='display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:lyricsLookupSpin .8s linear infinite';el.append(spin);}
+ const label=document.createElement('span');label.textContent=message;el.append(label);
+}
+async function fetchSongLyrics(title,artist){
+ const nonce=++lyricsLookupNonce;
+ lyricsLookupController?.abort();lyricsLookupController=new AbortController();
+ const signal=lyricsLookupController.signal;
+ $('lyr').value='';
+ lyricsLookupState('جاري البحث عن الكلمات...',true);
+ try{
+  const q=[artist,title].filter(Boolean).join(' ').trim();
+  const controller=new AbortController(),abort=()=>controller.abort();
+  signal.addEventListener('abort',abort,{once:true});
+  const timer=setTimeout(()=>controller.abort(),11000);
+  let response;
+  try{response=await fetch('https://lrclib.net/api/search?'+new URLSearchParams({q}),{signal:controller.signal,headers:{Accept:'application/json'}});}
+  finally{clearTimeout(timer);signal.removeEventListener('abort',abort);}
+  if(!response.ok)throw Error('LRCLIB HTTP '+response.status);
+  const matches=await response.json();
+  if(nonce!==lyricsLookupNonce)return;
+  const normalized=x=>String(x||'').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+  const targetTitle=normalized(title),targetArtist=normalized(artist);
+  const ranked=(Array.isArray(matches)?matches:[]).filter(x=>x.syncedLyrics||x.plainLyrics).map(x=>{
+   const t=normalized(x.trackName),a=normalized(x.artistName);
+   const titleMatch=t===targetTitle?100:t.includes(targetTitle)&&targetTitle?55:targetTitle.includes(t)&&t?40:0;
+   const artistMatch=!targetArtist?10:a===targetArtist?50:a.includes(targetArtist)||targetArtist.includes(a)?25:0;
+   return {x,score:titleMatch+artistMatch};
+  }).sort((a,b)=>b.score-a.score);
+  const best=ranked[0];
+  if(best&&best.score>=55){
+   $('lyr').value=best.x.syncedLyrics||best.x.plainLyrics||'';
+   lyricsLookupState('✓ تم جلب الكلمات بنجاح',false,true);
+  }else lyricsLookupState('لم نجد كلمات للأغنية، ولكن لا زال يمكنك كتابتها وتنسيقها بنفسك');
+ }catch(e){
+  if(nonce!==lyricsLookupNonce)return;
+  console.error('[Cassette LRCLIB] Lyrics lookup failed',e);
+  lyricsLookupState('لم نجد كلمات للأغنية، ولكن لا زال يمكنك كتابتها وتنسيقها بنفسك');
+ }
+}
+
 const serverLabel=i=>'السيرفر '+(i+1)+' من '+INVIDIOUS_SERVERS.length;
 function invidiousStatus(message,color){const el=$('pipedServerStatus');el.textContent=message;el.style.color=color||'#a9adb7';}
 function invidiousId(item){
@@ -633,6 +678,7 @@ async function runMusicSearch(start=0,automatic=true){
    const listen=document.createElement('button');listen.type='button';listen.className='cbtn';listen.textContent='▶ استماع';
    async function selectSong(autoplay){
     const chosen=++activeMusicChoice;
+    fetchSongLyrics(hit.title||'',hit.author||'');
     listen.disabled=true;choose.disabled=true;
     invidiousStatus('⏳ '+serverLabel(index)+' — تجهيز الصوت...','#e0bd70');
     try{
