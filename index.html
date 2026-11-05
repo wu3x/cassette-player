@@ -420,8 +420,8 @@ body{background:var(--bg);transition:background .25s ease}
 <h3>📼 مكتبة الأغاني <small style="font-size:11px;color:var(--panel-muted)">تجربة خاصة بالمسؤول</small></h3>
 <label class="field"><span>ابحث عن أغنية أو فنان</span><input id="musicQuery" type="search" placeholder="اسم الأغنية أو الفنان" autocomplete="off"></label>
 <button class="cbtn primary" id="musicSearch" type="button">🔎 بحث عن الأغاني</button>
-<div id="musicLoading" hidden role="status" aria-live="polite" style="padding:12px 0"><small>جارٍ البحث في Audius...</small><div style="height:4px;background:var(--line);overflow:hidden;border-radius:99px;margin-top:9px"><div class="music-progress-fill"></div></div></div>
-<p class="studio-tip">البحث عبر Audius (أحد مصادر muffon). توفر الأغاني الخليجية يعتمد على مكتبة المصدر، وبعض المقاطع قد لا تعمل أو تكون غير متاحة.</p>
+<div id="musicLoading" hidden role="status" aria-live="polite" style="padding:12px 0"><small>جارٍ البحث في Internet Archive...</small><div style="height:4px;background:var(--line);overflow:hidden;border-radius:99px;margin-top:9px"><div class="music-progress-fill"></div></div></div>
+<p class="studio-tip">بحث داخل Internet Archive، ثم فحص ملفات MP3 لكل نتيجة. بعض التسجيلات غير متاحة أو لا تعمل في Safari. تأكد من حقوق استخدام التسجيل قبل نشره.</p>
 <div class="music-results" id="musicResults" aria-live="polite"></div><div class="msg" id="musicMsg" role="status"></div>
 </section>
       <label class="field"><span>رابط مباشر لملف صوتي (اختياري، أو ارفع ملفاً)</span><input id="audioUrlIn" type="url" inputmode="url" placeholder="https://example.com/song.mp3"><small class="audio-help">إذا الأغنية عندك كملف، ارفعها على خدمة استضافة ملفات صوتية تدعم الروابط المباشرة، وانسخ رابط تشغيل الملف (MP3 أو M4A) والصقه هنا. لازم الرابط يفتح الصوت نفسه، مو صفحة تحميل أو مشاركة. وتقدر بدل ذلك ترفع الملف من الخانة التالية.</small></label><div class="field"><span class="pick-title">ملف الأغنية</span>
@@ -550,51 +550,76 @@ async function showEditor(){const {data:{user}}=await db.auth.getUser();if(!user
 pwForm.onsubmit=async e=>{e.preventDefault();msg($('pwMsg'),'جارٍ تسجيل الدخول...');const {error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('pw').value});$('pw').value='';if(error){msg($('pwMsg'),'فشل تسجيل الدخول. تحقق من البريد وكلمة المرور.',true);return;}await showEditor();};
 $('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'اختيار ملف';if($('file').files.length)$('audioUrlIn').value='';};
 
-// Admin-only discovery. Public playback and database are untouched.
-// Audius is a browser-accessible source also used by multi-source clients such as muffon.
+// Admin-only Internet Archive audio search; no extra server required.
 let musicSearchNonce=0,musicListen=null;
+const archiveAudioFormats=/^(VBR MP3|128Kbps MP3|64Kbps MP3|MP3|MPEG Audio|Ogg Vorbis)$/i;
+function archiveAudioFile(files){
+ const options=(files||[]).filter(f=>f&&typeof f.name==='string'&&/\.mp3$/i.test(f.name)&&!f.private&&!f.is_dark);
+ return options.find(f=>archiveAudioFormats.test(String(f.format||'')))||options[0]||null;
+}
+function archiveAudioUrl(id,name){
+ return 'https://archive.org/download/'+encodeURIComponent(id)+'/'+name.split('/').map(encodeURIComponent).join('/');
+}
+async function archiveJSON(url,signal){
+ const r=await fetch(url,{signal,headers:{Accept:'application/json'}});
+ if(!r.ok)throw Error('Archive HTTP '+r.status);
+ return r.json();
+}
 $('musicSearch').onclick=async()=>{
  const q=$('musicQuery').value.trim(),results=$('musicResults'),nonce=++musicSearchNonce;
  results.replaceChildren();
  if(musicListen){musicListen.pause();musicListen=null;}
  if(!q){msg($('musicMsg'),'اكتب اسم أغنية أو فنان.',true);return;}
  $('musicLoading').hidden=false;$('musicSearch').disabled=true;$('musicMsg').textContent='';
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
  try{
-  const response=await fetch('https://api.audius.co/v1/tracks/search?query='+encodeURIComponent(q)+'&limit=15',{signal:controller.signal,headers:{Accept:'application/json'}});
-  if(!response.ok)throw Error('HTTP '+response.status);
-  const body=await response.json();
+  const clean=q.replace(/[()\[\]{}:"*?\\]/g,' ').trim();
+  const phrase='"'+clean.replace(/\s+/g,' ')+'"';
+  const params=new URLSearchParams({q:'mediatype:(audio) AND (title:('+phrase+') OR creator:('+phrase+'))',output:'json',rows:'15',page:'1'});
+  params.append('fl[]','identifier');params.append('fl[]','title');params.append('fl[]','creator');
+  const body=await archiveJSON('https://archive.org/advancedsearch.php?'+params,controller.signal);
   if(nonce!==musicSearchNonce)return;
-  const hits=Array.isArray(body.data)?body.data:[];
-  if(!hits.length){msg($('musicMsg'),'ما حصلنا نتائج لهذا البحث في Audius. جرّب اسم الفنان بالإنجليزي أو كلمة ثانية.');return;}
+  const hits=body.response?.docs||[];
+  if(!hits.length){msg($('musicMsg'),'ما لقينا نتائج في Internet Archive. جرّب كلمات أقل أو تهجئة مختلفة.');return;}
+  let playable=0;
   for(const hit of hits){
-   if(!hit.id)continue;
-   const url='https://api.audius.co/v1/tracks/'+encodeURIComponent(hit.id)+'/stream';
+   if(nonce!==musicSearchNonce)break;
+   const id=String(hit.identifier||'');
+   if(!/^[a-zA-Z0-9_.-]+$/.test(id))continue;
    const item=document.createElement('div');item.className='music-hit';
-   const title=document.createElement('strong');title.textContent=hit.title||'بدون عنوان';
-   const artist=document.createElement('small');artist.textContent=hit.user?.name||hit.user?.handle||'';
+   const title=document.createElement('strong');title.textContent=Array.isArray(hit.title)?hit.title[0]:hit.title||id;
+   const artist=document.createElement('small');artist.textContent=Array.isArray(hit.creator)?hit.creator.join('، '):hit.creator||'Internet Archive';
    const row=document.createElement('div');row.className='row';
-   const listen=document.createElement('button');listen.type='button';listen.className='cbtn';listen.textContent='▶ استماع';
-   listen.onclick=async()=>{
-    if(musicListen&&!musicListen.paused&&musicListen.src===url){musicListen.pause();listen.textContent='▶ استماع';return;}
-    if(musicListen)musicListen.pause();
-    musicListen=new Audio(url);musicListen.preload='none';
-    listen.textContent='جارٍ التشغيل...';
-    try{await musicListen.play();listen.textContent='⏸ إيقاف';musicListen.onended=()=>listen.textContent='▶ استماع';}
-    catch(e){listen.textContent='▶ استماع';msg($('musicMsg'),'تعذر تشغيل هذا المقطع من Audius. جرّب نتيجة أخرى.',true);}
-   };
-   const choose=document.createElement('button');choose.type='button';choose.className='cbtn primary';choose.textContent='📼 معاينة بالكاسيت';
-   choose.onclick=()=>{
-    if(musicListen){musicListen.pause();musicListen=null;}
-    $('file').value='';$('fileName').textContent='ملف صوتي، حتى 45 ميجابايت';
-    $('audioUrlIn').value=url;$('titleIn').value=[hit.user?.name,hit.title].filter(Boolean).join(' — ').slice(0,120);
-    $('previewBtn').click();
-   };
+   const choose=document.createElement('button');choose.type='button';choose.className='cbtn primary';choose.textContent='جارٍ فحص الصوت...';choose.disabled=true;
+   const listen=document.createElement('button');listen.type='button';listen.className='cbtn';listen.textContent='▶ استماع';listen.disabled=true;
    row.append(listen,choose);item.append(title,artist,row);results.append(item);
+   try{
+    const data=await archiveJSON('https://archive.org/metadata/'+encodeURIComponent(id),controller.signal);
+    if(nonce!==musicSearchNonce)return;
+    const file=archiveAudioFile(data.files);
+    if(!file){choose.textContent='لا يوجد MP3';continue;}
+    const url=archiveAudioUrl(id,file.name);playable++;
+    choose.disabled=false;listen.disabled=false;choose.textContent='📼 معاينة بالكاسيت';
+    listen.onclick=async()=>{
+     if(musicListen&&!musicListen.paused&&musicListen.src===url){musicListen.pause();listen.textContent='▶ استماع';return;}
+     if(musicListen)musicListen.pause();
+     musicListen=new Audio(url);musicListen.preload='none';
+     listen.textContent='جارٍ التشغيل...';
+     try{await musicListen.play();listen.textContent='⏸ إيقاف';musicListen.onended=()=>listen.textContent='▶ استماع';}
+     catch(e){listen.textContent='▶ استماع';msg($('musicMsg'),'تعذر تشغيل هذا الملف. قد يكون المصدر غير متاح أو يمنع التشغيل الخارجي.',true);}
+    };
+    choose.onclick=()=>{
+     if(musicListen){musicListen.pause();musicListen=null;}
+     $('file').value='';$('fileName').textContent='ملف صوتي، حتى 45 ميجابايت';
+     $('audioUrlIn').value=url;
+     $('titleIn').value=[artist.textContent,title.textContent].filter(Boolean).join(' — ').slice(0,80);
+     $('previewBtn').click();
+    };
+   }catch(e){if(e.name==='AbortError')throw e;choose.textContent='تعذر فحص الملف';}
   }
-  msg($('musicMsg'),'ظهرت نتائج Audius. جرّب الاستماع أو المعاينة قبل النشر.');
+  if(nonce===musicSearchNonce)msg($('musicMsg'),playable?'وجدنا '+playable+' نتيجة فيها MP3. جرّب المعاينة قبل النشر، وتأكد من حقوق استخدام التسجيل.':'ظهرت نتائج لكن لم نعثر على ملفات MP3 قابلة للاختيار.');
  }catch(e){
-  if(nonce===musicSearchNonce)msg($('musicMsg'),'تعذر البحث من هذا المتصفح أو المصدر غير متاح الآن. لم يتم تغيير الكاسيت المنشور.',true);
+  if(nonce===musicSearchNonce)msg($('musicMsg'),'تعذر الاتصال بـ Internet Archive أو انتهت مهلة البحث. لم يتغير الكاسيت المنشور.',true);
  }finally{clearTimeout(timer);if(nonce===musicSearchNonce){$('musicLoading').hidden=true;$('musicSearch').disabled=false;}}
 };
 $('musicQuery').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('musicSearch').click();}});
