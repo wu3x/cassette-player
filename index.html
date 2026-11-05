@@ -580,7 +580,7 @@ function pipedVideoId(item){
  return item.videoId||url.match(/[?&]v=([A-Za-z0-9_-]{11})/)?.[1]||url.match(/\/watch\/([A-Za-z0-9_-]{11})/)?.[1]||'';
 }
 function pipedAudio(streams){
- return (Array.isArray(streams)?streams:[]).filter(x=>x&&typeof x.url==='string'&&/^https:\/\//.test(x.url)).map(x=>{
+ return (Array.isArray(streams)?streams:[]).filter(x=>x&&typeof x.url==='string'&&(/^(https?:\/\/|\/)/.test(x.url))).map(x=>{
   const mime=String(x.mimeType||x.type||x.mime||'').toLowerCase();
   const codec=String(x.codec||x.encoding||'').toLowerCase();
   const audioOnly=mime.startsWith('audio/')||!!x.audioQuality||!!x.audioTrackId;
@@ -644,6 +644,7 @@ function audioAttempt(url,autoplay,timeout=11000){
  });
 }
 async function playWithFallback(hit,start,autoplay,token){
+ if(token.cleanup){token.cleanup();token.cleanup=null;}
  for(let n=0;n<MEDIA_SERVERS.length;n++){
   if(activeMediaRetry!==token)return;
   const index=(start+n)%MEDIA_SERVERS.length;
