@@ -419,9 +419,9 @@ body{background:var(--bg);transition:background .25s ease}
 <section class="music-library" aria-label="مكتبة الأغاني">
 <h3>📼 مكتبة الأغاني <small style="font-size:11px;color:var(--panel-muted)">تجربة خاصة بالمسؤول</small></h3>
 <label class="field"><span>ابحث عن أغنية أو فنان</span><input id="musicQuery" type="search" placeholder="اسم الأغنية أو الفنان" autocomplete="off"></label>
-<button class="cbtn primary" id="musicSearch" type="button">🔎 بحث عن الأغاني</button>
-<div id="musicLoading" hidden role="status" aria-live="polite" style="padding:12px 0"><small>جارٍ البحث في Audius...</small><div style="height:4px;background:var(--line);overflow:hidden;border-radius:99px;margin-top:9px"><div class="music-progress-fill"></div></div></div>
-<p class="studio-tip">البحث عبر Audius (أحد مصادر muffon). توفر الأغاني الخليجية يعتمد على مكتبة المصدر، وبعض المقاطع قد لا تعمل أو تكون غير متاحة.</p>
+<button class="cbtn primary" id="musicSearch" type="button">🔎 البحث في المنصات</button>
+<div id="musicLoading" hidden role="status" aria-live="polite" style="padding:12px 0"><small>اختر منصة البحث</small><div style="height:4px;background:var(--line);overflow:hidden;border-radius:99px;margin-top:9px"><div class="music-progress-fill"></div></div></div>
+<p class="studio-tip">ابحث في YouTube Music أو SoundCloud من لوحة المسؤول. لعرض الأغنية على الكاسيت ارفع ملفًا صوتيًا تملك حق استخدامه أو أضف رابطًا مباشرًا مصرحًا به. لا تحتاج إلى خادم إضافي.</p>
 <div class="music-results" id="musicResults" aria-live="polite"></div><div class="msg" id="musicMsg" role="status"></div>
 </section>
       <label class="field"><span>رابط مباشر لملف صوتي (اختياري، أو ارفع ملفاً)</span><input id="audioUrlIn" type="url" inputmode="url" placeholder="https://example.com/song.mp3"><small class="audio-help">إذا الأغنية عندك كملف، ارفعها على خدمة استضافة ملفات صوتية تدعم الروابط المباشرة، وانسخ رابط تشغيل الملف (MP3 أو M4A) والصقه هنا. لازم الرابط يفتح الصوت نفسه، مو صفحة تحميل أو مشاركة. وتقدر بدل ذلك ترفع الملف من الخانة التالية.</small></label><div class="field"><span class="pick-title">ملف الأغنية</span>
@@ -552,50 +552,30 @@ $('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'ا�
 
 // Admin-only discovery. Public playback and database are untouched.
 // Audius is a browser-accessible source also used by multi-source clients such as muffon.
-let musicSearchNonce=0,musicListen=null;
-$('musicSearch').onclick=async()=>{
- const q=$('musicQuery').value.trim(),results=$('musicResults'),nonce=++musicSearchNonce;
+// GitHub Pages-only search shortcuts. Never treat provider pages as audio streams.
+$('musicSearch').onclick=()=>{
+ const q=$('musicQuery').value.trim(),results=$('musicResults');
  results.replaceChildren();
- if(musicListen){musicListen.pause();musicListen=null;}
- if(!q){msg($('musicMsg'),'اكتب اسم أغنية أو فنان.',true);return;}
- $('musicLoading').hidden=false;$('musicSearch').disabled=true;$('musicMsg').textContent='';
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),12000);
- try{
-  const response=await fetch('https://api.audius.co/v1/tracks/search?query='+encodeURIComponent(q)+'&limit=15',{signal:controller.signal,headers:{Accept:'application/json'}});
-  if(!response.ok)throw Error('HTTP '+response.status);
-  const body=await response.json();
-  if(nonce!==musicSearchNonce)return;
-  const hits=Array.isArray(body.data)?body.data:[];
-  if(!hits.length){msg($('musicMsg'),'ما حصلنا نتائج لهذا البحث في Audius. جرّب اسم الفنان بالإنجليزي أو كلمة ثانية.');return;}
-  for(const hit of hits){
-   if(!hit.id)continue;
-   const url='https://api.audius.co/v1/tracks/'+encodeURIComponent(hit.id)+'/stream';
-   const item=document.createElement('div');item.className='music-hit';
-   const title=document.createElement('strong');title.textContent=hit.title||'بدون عنوان';
-   const artist=document.createElement('small');artist.textContent=hit.user?.name||hit.user?.handle||'';
-   const row=document.createElement('div');row.className='row';
-   const listen=document.createElement('button');listen.type='button';listen.className='cbtn';listen.textContent='▶ استماع';
-   listen.onclick=async()=>{
-    if(musicListen&&!musicListen.paused&&musicListen.src===url){musicListen.pause();listen.textContent='▶ استماع';return;}
-    if(musicListen)musicListen.pause();
-    musicListen=new Audio(url);musicListen.preload='none';
-    listen.textContent='جارٍ التشغيل...';
-    try{await musicListen.play();listen.textContent='⏸ إيقاف';musicListen.onended=()=>listen.textContent='▶ استماع';}
-    catch(e){listen.textContent='▶ استماع';msg($('musicMsg'),'تعذر تشغيل هذا المقطع من Audius. جرّب نتيجة أخرى.',true);}
-   };
-   const choose=document.createElement('button');choose.type='button';choose.className='cbtn primary';choose.textContent='📼 معاينة بالكاسيت';
-   choose.onclick=()=>{
-    if(musicListen){musicListen.pause();musicListen=null;}
-    $('file').value='';$('fileName').textContent='ملف صوتي، حتى 45 ميجابايت';
-    $('audioUrlIn').value=url;$('titleIn').value=[hit.user?.name,hit.title].filter(Boolean).join(' — ').slice(0,120);
-    $('previewBtn').click();
-   };
-   row.append(listen,choose);item.append(title,artist,row);results.append(item);
-  }
-  msg($('musicMsg'),'ظهرت نتائج Audius. جرّب الاستماع أو المعاينة قبل النشر.');
- }catch(e){
-  if(nonce===musicSearchNonce)msg($('musicMsg'),'تعذر البحث من هذا المتصفح أو المصدر غير متاح الآن. لم يتم تغيير الكاسيت المنشور.',true);
- }finally{clearTimeout(timer);if(nonce===musicSearchNonce){$('musicLoading').hidden=true;$('musicSearch').disabled=false;}}
+ if(!q){msg($('musicMsg'),'اكتب اسم الأغنية أو الفنان أولاً.',true);return;}
+ // Adapted from sm3ha/server/catalog.ts: normalize Arabic only as an optional search variant.
+ // Keep the original query intact; platforms may index the exact spelling better.
+ const normalized=q.toLocaleLowerCase('ar').normalize('NFKD')
+  .replace(/[\u064B-\u065F\u0670]/g,'').replace(/[إأآا]/g,'ا')
+  .replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/\s+/g,' ').trim();
+ const sources=[
+  {label:'البحث في YouTube Music',url:'https://music.youtube.com/search?q='+encodeURIComponent(q)},
+  {label:'البحث في SoundCloud',url:'https://soundcloud.com/search?q='+encodeURIComponent(q)}
+ ];
+ if(normalized&&normalized!==q.toLocaleLowerCase('ar')){
+  sources.push({label:'بحث عربي بديل في YouTube Music',url:'https://music.youtube.com/search?q='+encodeURIComponent(normalized)});
+  sources.push({label:'بحث عربي بديل في SoundCloud',url:'https://soundcloud.com/search?q='+encodeURIComponent(normalized)});
+ }
+ for(const source of sources){
+  const link=document.createElement('a');
+  link.className='cbtn primary';link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=source.label;
+  results.append(link);
+ }
+ msg($('musicMsg'),'تفتح النتائج في تبويب جديد. روابط صفحات الأغاني ما تشتغل كملفات صوتية داخل الكاسيت. استخدم ملفًا صوتيًا أو رابطًا مباشرًا مسموحًا به للمعاينة والنشر.');
 };
 $('musicQuery').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('musicSearch').click();}});
 let syncLines=[],syncTimes=[],syncPosition=0;
