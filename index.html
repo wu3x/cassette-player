@@ -420,6 +420,7 @@ body{background:var(--bg);transition:background .25s ease}
 <h3>📼 مكتبة الأغاني <small style="font-size:11px;color:var(--panel-muted)">تجربة خاصة بالمسؤول</small></h3>
 <label class="field"><span>ابحث عن أغنية أو فنان</span><input id="musicQuery" type="search" placeholder="اسم الأغنية أو الفنان" autocomplete="off"></label>
 <button class="cbtn primary" id="musicSearch" type="button">🔎 بحث عن الأغاني</button>
+<div id="pipedServerStatus" role="status" aria-live="polite" style="font-size:12px;line-height:1.7;color:#a9adb7;margin:7px 2px 10px;direction:rtl">السيرفر: جاهز للبحث · 12 سيرفر متاح للتجربة</div>
 <div id="musicLoading" hidden role="status" aria-live="polite" style="padding:12px 0"><small>جارٍ البحث في Piped...</small><div style="height:4px;background:var(--line);overflow:hidden;border-radius:99px;margin-top:9px"><div class="music-progress-fill"></div></div></div>
 <p class="studio-tip">بحث تجريبي عبر Piped عن الأغاني الخليجية والعربية. روابط البث مؤقتة وقد لا تعمل على Safari، وليست مناسبة للنشر الدائم. لا تنشر محتوى دون تصريح.</p>
 <div class="music-results" id="musicResults" aria-live="polite"></div><div class="msg" id="musicMsg" role="status"></div>
@@ -567,6 +568,7 @@ const PIPED_INSTANCES=[
  'https://api.piped.projectsegfau.lt'
 ];
 let musicSearchNonce=0,musicListen=null,activePipedController=null;
+function pipedStatus(value,color){const el=$('pipedServerStatus');el.textContent=value;el.style.color=color||'#a9adb7';}
 function pipedVideoId(item){
  const url=String(item.url||'');
  const match=url.match(/[?&]v=([A-Za-z0-9_-]{11})/)||url.match(/\/watch\/([A-Za-z0-9_-]{11})/);
@@ -594,14 +596,16 @@ async function pipedSearchWithFallback(query,signal,onAttempt){
  for(let i=0;i<PIPED_INSTANCES.length;i++){
   if(signal.aborted)throw Error('Search cancelled');
   const base=PIPED_INSTANCES[i];
-  onAttempt(i+1,PIPED_INSTANCES.length);
+  onAttempt(i+1,PIPED_INSTANCES.length,'trying');
   try{
    const data=await pipedJSON(base,path,signal);
    if(!Array.isArray(data.items))throw Error('Invalid search response');
+   onAttempt(i+1,PIPED_INSTANCES.length,'success');
    return {base,hits:data.items.filter(x=>x.type==='stream'&&pipedVideoId(x)).slice(0,20)};
   }catch(error){
    if(signal.aborted)throw error;
    errors.push(base+': '+error.message);
+   onAttempt(i+1,PIPED_INSTANCES.length,'failed');
   }
  }
  console.warn('All Piped instances failed:',errors);
@@ -614,12 +618,15 @@ $('musicSearch').onclick=async()=>{
  const signal=activePipedController.signal;
  results.replaceChildren();
  if(musicListen){musicListen.pause();musicListen=null;}
- if(!q){msg($('musicMsg'),'اكتب اسم أغنية أو فنان.',true);return;}
+ if(!q){pipedStatus('السيرفر: اكتب اسم أغنية للبدء');msg($('musicMsg'),'اكتب اسم أغنية أو فنان.',true);return;}
  $('musicLoading').hidden=false;$('musicSearch').disabled=true;$('musicMsg').textContent='';
  try{
   const searchTerm=q+(/خليجي|عود|سعودي|جلسة/.test(q)?'':' خليجي');
-  const {base,hits}=await pipedSearchWithFallback(searchTerm,signal,(current,total)=>{
-   if(nonce===musicSearchNonce)msg($('musicMsg'),'جارٍ تجربة خادم Piped '+current+' من '+total+'...');
+  const {base,hits}=await pipedSearchWithFallback(searchTerm,signal,(current,total,state)=>{
+   if(nonce!==musicSearchNonce)return;
+   if(state==='trying')pipedStatus('⏳ السيرفر '+current+' من '+total+' — جارٍ الاتصال...','#e0bd70');
+   else if(state==='failed')pipedStatus('✕ السيرفر '+current+' فشل — الانتقال للتالي...','#ff8e86');
+   else if(state==='success')pipedStatus('✓ السيرفر '+current+' من '+total+' يعمل','#80d5a5');
   });
   if(nonce!==musicSearchNonce)return;
   if(!hits.length){msg($('musicMsg'),'اتصلنا بخادم Piped لكنه لم يجد نتائج. جرّب بحثًا آخر.');return;}
@@ -669,7 +676,7 @@ $('musicSearch').onclick=async()=>{
   }
   msg($('musicMsg'),'تم البحث عبر خادم Piped متاح. جرّب الاستماع أو المعاينة قبل النشر.');
  }catch(e){
-  if(nonce===musicSearchNonce)msg($('musicMsg'),'تعذر البحث عبر جميع خوادم Piped المتاحة في القائمة. قد تكون الخوادم متوقفة أو تمنع CORS.',true);
+  if(nonce===musicSearchNonce){pipedStatus('✕ تم فحص 12 سيرفر — لم يستجب أي منها','#ff8e86');msg($('musicMsg'),'تعذر البحث عبر جميع خوادم Piped المتاحة في القائمة. قد تكون الخوادم متوقفة أو تمنع CORS.',true);}
  }finally{if(nonce===musicSearchNonce){$('musicLoading').hidden=true;$('musicSearch').disabled=false;}}
 };
 $('musicQuery').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('musicSearch').click();}});
