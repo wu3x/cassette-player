@@ -567,7 +567,7 @@ const INVIDIOUS_SERVERS=[
  'https://invidious.privacydev.net'
 ];
 let musicSearchNonce=0,activeInvidiousController=null,searchServerStart=0,activeMusicChoice=0,inlineMusicAudio=new Audio();
-let lyricsLookupNonce=0,lyricsLookupController=null;
+let lyricsLookupNonce=0,lyricsLookupController=null,selectedLyricsSong=null;
 function lyricsLookupState(message,loading=false,success=false){
  const el=$('lyricsLookupStatus');el.style.display='flex';el.style.color=success?'#80d5a5':'#a9adb7';
  el.replaceChildren();
@@ -611,7 +611,7 @@ async function fetchSongLyrics(title,artist){
  }
 }
 
-$('lyricsFetchBtn').onclick=()=>{const title=$('titleIn').value.trim();if(!title){lyricsLookupState('اختر أغنية أولاً.');return;}fetchSongLyrics(title,'');};
+$('lyricsFetchBtn').onclick=()=>{if(!selectedLyricsSong){lyricsLookupState('اضغط «اختيار» بجانب الأغنية أولاً.');return;}fetchSongLyrics(selectedLyricsSong.title,selectedLyricsSong.artist);};
 const serverLabel=i=>'السيرفر '+(i+1)+' من '+INVIDIOUS_SERVERS.length;
 function invidiousStatus(message,color){const el=$('pipedServerStatus');el.textContent=message;el.style.color=color||'#a9adb7';}
 function invidiousId(item){
@@ -679,17 +679,27 @@ async function runMusicSearch(start=0,automatic=true){
    const row=document.createElement('div');row.className='row';
    const choose=document.createElement('button');choose.type='button';choose.className='cbtn primary';choose.textContent='📼 معاينة بالكاسيت';
    const listen=document.createElement('button');listen.type='button';listen.className='cbtn';listen.textContent='▶ استماع';
+   const pick=document.createElement('button');pick.type='button';pick.className='cbtn';pick.textContent='✓ اختيار';
    const inlineStatus=document.createElement('small');inlineStatus.style.cssText='display:block;font-size:12px;margin:5px 0;color:#a9adb7';
    async function resolveSelectedAudio(){
     const data=await invidiousJSON(index,'/api/v1/videos/'+encodeURIComponent(id),null,13000);
     if(data.error)throw Error(String(data.error));
     return invidiousAudio(data.adaptiveFormats,index);
    }
+   function pickLyricsSong(){
+    selectedLyricsSong={title:hit.title||'',artist:hit.author||''};
+    $('titleIn').value=[selectedLyricsSong.artist,selectedLyricsSong.title].filter(Boolean).join(' — ').slice(0,80);
+    document.querySelectorAll('.music-hit').forEach(el=>el.style.outline='');
+    item.style.outline='2px solid #80d5a5';
+    inlineStatus.textContent='✓ تم اختيار الأغنية لجلب الكلمات';
+    fetchSongLyrics(selectedLyricsSong.title,selectedLyricsSong.artist);
+   }
+   pick.onclick=pickLyricsSong;
    async function selectSong(mode){
     const chosen=++activeMusicChoice;
     listen.disabled=true;choose.disabled=true;
     inlineStatus.textContent='جارٍ تجهيز الصوت من '+serverLabel(index)+'...';
-    fetchSongLyrics(hit.title||'',hit.author||'');
+    pickLyricsSong();
     try{
      const url=await resolveSelectedAudio();
      if(chosen!==activeMusicChoice)return;
@@ -726,9 +736,9 @@ async function runMusicSearch(start=0,automatic=true){
    };
    choose.onclick=()=>selectSong('preview');
    inlineMusicAudio.addEventListener('error',()=>{if(!inlineMusicAudio.src)return;inlineStatus.textContent='✕ تعذر تشغيل الصوت. جرّب السيرفر التالي.';console.error('[Cassette] Inline audio error',inlineMusicAudio.error);},{once:true});
-   row.append(listen,choose);item.append(title,artist,row,inlineStatus);results.append(item);
+   row.append(listen,choose,pick);item.append(title,artist,row,inlineStatus);results.append(item);
   }
-  msg($('musicMsg'),'اختر أغنية للاستماع. إذا لم تعمل، اضغط «جرّب السيرفر التالي».');
+  msg($('musicMsg'),'اضغط «اختيار» بجانب الأغنية لجلب كلماتها تلقائياً، أو «استماع» لتجربتها.');
  }catch(e){
   if(nonce===musicSearchNonce){invidiousStatus('✕ '+serverLabel(start)+' غير متاح','#ff8e86');msg($('musicMsg'),automatic?'تعذر البحث في سيرفرات Invidious الحالية.':'هذا السيرفر لا يستجيب. اضغط «جرّب السيرفر التالي» مرة أخرى.',true);}
  }finally{if(nonce===musicSearchNonce){$('musicLoading').hidden=true;$('musicSearch').disabled=false;}}
