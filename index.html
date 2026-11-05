@@ -420,10 +420,10 @@ body{background:var(--bg);transition:background .25s ease}
 <h3>📼 مكتبة الأغاني <small style="font-size:11px;color:var(--panel-muted)">تجربة خاصة بالمسؤول</small></h3>
 <label class="field"><span>ابحث عن أغنية أو فنان</span><input id="musicQuery" type="search" placeholder="اسم الأغنية أو الفنان" autocomplete="off"></label>
 <button class="cbtn primary" id="musicSearch" type="button">🔎 بحث عن الأغاني</button>
-<div id="pipedServerStatus" role="status" aria-live="polite" style="font-size:12px;line-height:1.7;color:#a9adb7;margin:7px 2px 10px;direction:rtl">السيرفر: جاهز للبحث · 12 سيرفر متاح للتجربة</div>
+<div id="pipedServerStatus" role="status" aria-live="polite" style="font-size:12px;line-height:1.7;color:#a9adb7;margin:7px 2px 10px;direction:rtl">السيرفر: جاهز للبحث · 10 سيرفرات Invidious</div>
 <button id="musicNextServer" type="button" class="cbtn" style="font-size:11px;padding:5px 10px;margin:4px 0 8px">↻ جرّب السيرفر التالي</button>
-<div id="musicLoading" hidden role="status" aria-live="polite" style="padding:12px 0"><small>جارٍ البحث في Piped...</small><div style="height:4px;background:var(--line);overflow:hidden;border-radius:99px;margin-top:9px"><div class="music-progress-fill"></div></div></div>
-<p class="studio-tip">بحث تجريبي عبر Piped عن الأغاني الخليجية والعربية. روابط البث مؤقتة وقد لا تعمل على Safari، وليست مناسبة للنشر الدائم. لا تنشر محتوى دون تصريح.</p>
+<div id="musicLoading" hidden role="status" aria-live="polite" style="padding:12px 0"><small>جارٍ البحث في Invidious...</small><div style="height:4px;background:var(--line);overflow:hidden;border-radius:99px;margin-top:9px"><div class="music-progress-fill"></div></div></div>
+<p class="studio-tip">إذا ما اشتغلت الأغنية، اضغط «جرّب السيرفر التالي» ثم أعد اختيارها.</p>
 <div class="music-results" id="musicResults" aria-live="polite"></div><div class="msg" id="musicMsg" role="status"></div>
 </section>
       <label class="field"><span>رابط مباشر لملف صوتي (اختياري، أو ارفع ملفاً)</span><input id="audioUrlIn" type="url" inputmode="url" placeholder="https://example.com/song.mp3"><small class="audio-help">إذا الأغنية عندك كملف، ارفعها على خدمة استضافة ملفات صوتية تدعم الروابط المباشرة، وانسخ رابط تشغيل الملف (MP3 أو M4A) والصقه هنا. لازم الرابط يفتح الصوت نفسه، مو صفحة تحميل أو مشاركة. وتقدر بدل ذلك ترفع الملف من الخانة التالية.</small></label><div class="field"><span class="pick-title">ملف الأغنية</span>
@@ -552,164 +552,128 @@ async function showEditor(){const {data:{user}}=await db.auth.getUser();if(!user
 pwForm.onsubmit=async e=>{e.preventDefault();msg($('pwMsg'),'جارٍ تسجيل الدخول...');const {error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('pw').value});$('pw').value='';if(error){msg($('pwMsg'),'فشل تسجيل الدخول. تحقق من البريد وكلمة المرور.',true);return;}await showEditor();};
 $('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'اختيار ملف';if($('file').files.length)$('audioUrlIn').value='';};
 
-// Piped + Invidious browser-only search and audio fallback.
-// Public endpoints may block CORS/media or require challenges; playback cannot be guaranteed.
-const PIPED_INSTANCES=[
- 'https://pipedapi.kavin.rocks',
- 'https://pipedapi-libre.kavin.rocks',
- 'https://api.piped.private.coffee',
- 'https://api.piped.privacydev.net',
- 'https://pipedapi.palveluntarjoaja.eu',
- 'https://pipedapi.smnz.de',
- 'https://pipedapi.moomoo.me',
- 'https://pipedapi.syncpundit.io',
- 'https://api-piped.mha.fi',
- 'https://pipedapi.tokhmi.xyz',
- 'https://piped-api.privacy.com.de',
- 'https://api.piped.projectsegfau.lt'
+// Invidious-only discovery. Search falls back automatically; playback uses one server only.
+const INVIDIOUS_SERVERS=[
+ 'https://inv.nadeko.net',
+ 'https://invidious.nerdvpn.de',
+ 'https://yt.chocolatemoo53.com',
+ 'https://invidious.tiekoetter.com',
+ 'https://invidious.privacyredirect.com',
+ 'https://invidious.protokolla.fi',
+ 'https://invidious.jing.rocks',
+ 'https://invidious.perennialte.ch',
+ 'https://iv.melmac.space',
+ 'https://invidious.privacydev.net'
 ];
-const MEDIA_SERVERS=[
- ...PIPED_INSTANCES.map(base=>({type:'piped',base})),
- ...['https://inv.nadeko.net','https://invidious.nerdvpn.de','https://yt.chocolatemoo53.com','https://invidious.tiekoetter.com'].map(base=>({type:'invidious',base}))
-];
-let musicSearchNonce=0,activePipedController=null,searchServerStart=0,activeMediaRetry=null;
-const serverLabel=(i)=>'السيرفر '+(i+1)+' من '+MEDIA_SERVERS.length+' ('+MEDIA_SERVERS[i].type+')';
-function pipedStatus(value,color){const el=$('pipedServerStatus');el.textContent=value;el.style.color=color||'#a9adb7';}
-function pipedVideoId(item){
- const url=String(item.url||'');
- return item.videoId||url.match(/[?&]v=([A-Za-z0-9_-]{11})/)?.[1]||url.match(/\/watch\/([A-Za-z0-9_-]{11})/)?.[1]||'';
+let musicSearchNonce=0,activeInvidiousController=null,searchServerStart=0,activeMusicChoice=0;
+const serverLabel=i=>'السيرفر '+(i+1)+' من '+INVIDIOUS_SERVERS.length;
+function invidiousStatus(message,color){const el=$('pipedServerStatus');el.textContent=message;el.style.color=color||'#a9adb7';}
+function invidiousId(item){
+ return item.videoId||String(item.url||'').match(/[?&]v=([A-Za-z0-9_-]{11})/)?.[1]||'';
 }
-function pipedAudio(streams){
- return (Array.isArray(streams)?streams:[]).filter(x=>x&&typeof x.url==='string'&&(/^(https?:\/\/|\/)/.test(x.url))).map(x=>{
-  const mime=String(x.mimeType||x.type||x.mime||'').toLowerCase();
-  const codec=String(x.codec||x.encoding||'').toLowerCase();
-  const audioOnly=mime.startsWith('audio/')||!!x.audioQuality||!!x.audioTrackId;
-  const safari=/audio\/(mp4|x-m4a|mpeg|aac)/.test(mime)||/mp4a|aac/.test(codec);
-  const can=audio.canPlayType(mime);
-  return {x,score:(audioOnly?10000000:0)+(safari?1000000:0)+(can==='probably'?200000:can==='maybe'?100000:0)+Number(x.bitrate||0)};
- }).filter(x=>x.score>=10000000).sort((a,b)=>b.score-a.score).map(x=>x.x)[0]||null;
-}
-async function mediaJSON(server,path,signal,timeoutMs=6500){
- const ctl=new AbortController(),abort=()=>ctl.abort();
+async function invidiousJSON(index,path,signal,timeout=6500){
+ const controller=new AbortController(),abort=()=>controller.abort();
  signal?.addEventListener('abort',abort,{once:true});
- const timer=setTimeout(()=>ctl.abort(),timeoutMs);
+ const timer=setTimeout(()=>controller.abort(),timeout);
  try{
-  const response=await fetch(server.base+path,{signal:ctl.signal,headers:{Accept:'application/json'}});
+  const response=await fetch(INVIDIOUS_SERVERS[index]+path,{signal:controller.signal,headers:{Accept:'application/json'}});
   if(!response.ok)throw Error('HTTP '+response.status);
   return await response.json();
  }finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
 }
-function mediaSearchPath(server,q){
- return server.type==='piped'?'/search?'+new URLSearchParams({q,filter:'videos'}):'/api/v1/search?'+new URLSearchParams({q,type:'video'});
+function invidiousAudio(formats,index){
+ const ranked=(Array.isArray(formats)?formats:[]).filter(f=>f&&typeof f.url==='string').map(f=>{
+  const mime=String(f.type||f.mimeType||'').toLowerCase();
+  const audioOnly=mime.startsWith('audio/')||!!f.audioQuality;
+  const safari=/audio\/(mp4|x-m4a|mpeg|aac)/.test(mime)||/mp4a/.test(mime);
+  const support=audio.canPlayType(mime);
+  return {f,score:(audioOnly?10000000:0)+(safari?1000000:0)+(support==='probably'?100000:0)+Number(f.bitrate||0)};
+ }).filter(x=>x.score>=10000000).sort((a,b)=>b.score-a.score);
+ if(!ranked.length)throw Error('No audio-only format');
+ return new URL(ranked[0].f.url,INVIDIOUS_SERVERS[index]).href;
 }
-function normalizeHits(server,data){
- const raw=server.type==='piped'?data?.items:data;
- if(!Array.isArray(raw))throw Error('Invalid results');
- return raw.filter(x=>(server.type==='piped'?x.type==='stream':x.type==='video')&&pipedVideoId(x)).slice(0,20).map(x=>({videoId:pipedVideoId(x),title:x.title||'بدون عنوان',artist:x.uploaderName||x.author||''}));
-}
-async function findMediaServer(q,signal,start=0){
- for(let n=0;n<MEDIA_SERVERS.length;n++){
+async function searchInvidious(query,start,signal,automatic){
+ const count=automatic?INVIDIOUS_SERVERS.length:1;
+ for(let n=0;n<count;n++){
   if(signal.aborted)throw Error('Cancelled');
-  const index=(start+n)%MEDIA_SERVERS.length,server=MEDIA_SERVERS[index];
-  pipedStatus('⏳ '+serverLabel(index)+' — جارٍ البحث...','#e0bd70');
+  const index=(start+n)%INVIDIOUS_SERVERS.length;
+  invidiousStatus('⏳ '+serverLabel(index)+' — جارٍ البحث...','#e0bd70');
   try{
-   const hits=normalizeHits(server,await mediaJSON(server,mediaSearchPath(server,q),signal));
-   pipedStatus('✓ '+serverLabel(index)+' يعمل','#80d5a5');
+   const data=await invidiousJSON(index,'/api/v1/search?'+new URLSearchParams({q:query,type:'video'}),signal);
+   if(!Array.isArray(data))throw Error('Invalid search results');
+   const hits=data.filter(x=>x.type==='video'&&invidiousId(x)).slice(0,20);
+   invidiousStatus('✓ '+serverLabel(index)+' يعمل','#80d5a5');
    return {index,hits};
-  }catch(e){console.error('[Cassette] Search failed',server,e);pipedStatus('✕ '+serverLabel(index)+' فشل — التالي...','#ff8e86');}
- }
- throw Error('All search servers failed');
-}
-async function streamFromServer(index,id){
- const server=MEDIA_SERVERS[index],path=server.type==='piped'?'/streams/'+encodeURIComponent(id):'/api/v1/videos/'+encodeURIComponent(id);
- const info=await mediaJSON(server,path,null,11000);
- if(info.error)throw Error(String(info.error));
- const formats=server.type==='piped'?info.audioStreams:info.adaptiveFormats;
- const best=pipedAudio(formats);
- if(!best)throw Error('No supported audio format');
- return new URL(best.url,server.base).href;
-}
-function audioAttempt(url,autoplay,timeout=11000){
- return new Promise((resolve,reject)=>{
-  let finished=false;
-  const cleanup=()=>{clearTimeout(timer);audio.removeEventListener('error',onError);audio.removeEventListener('playing',onPlaying);audio.removeEventListener('canplay',onReady);};
-  const done=(error)=>{if(finished)return;finished=true;cleanup();error?reject(error):resolve();};
-  const onError=()=>done(Error('HTMLAudioElement error '+(audio.error?.code||'')));
-  const onPlaying=()=>done();
-  const onReady=()=>{if(!autoplay)done();};
-  const timer=setTimeout(()=>done(Error('Audio load timeout')),timeout);
-  audio.addEventListener('error',onError);audio.addEventListener('playing',onPlaying);audio.addEventListener('canplay',onReady);
-  audio.src=url;audio.load();
-  if(autoplay)audio.play().catch(done);
- });
-}
-async function playWithFallback(hit,start,autoplay,token){
- if(token.cleanup){token.cleanup();token.cleanup=null;}
- for(let n=0;n<MEDIA_SERVERS.length;n++){
-  if(activeMediaRetry!==token)return;
-  const index=(start+n)%MEDIA_SERVERS.length;
-  pipedStatus('⏳ '+serverLabel(index)+' — تجهيز بث الأغنية...','#e0bd70');
-  try{
-   const url=await streamFromServer(index,hit.videoId);
-   if(activeMediaRetry!==token)return;
-   $('file').value='';$('fileName').textContent='ملف صوتي، حتى 45 ميجابايت';
-   $('audioUrlIn').value=url;
-   $('titleIn').value=[hit.artist,hit.title].filter(Boolean).join(' — ').slice(0,80);
-   $('previewBtn').click();
-   if(!previewActive)throw Error('Preview unavailable');
-   await audioAttempt(url,autoplay);
-   if(activeMediaRetry!==token)return;
-   pipedStatus('✓ '+serverLabel(index)+' — الصوت جاهز','#80d5a5');
-   $('previewMsg').textContent=autoplay?'جارٍ تشغيل الأغنية في الكاسيت.':'الصوت جاهز؛ اضغط تشغيل بالكاسيت.';
-   // Retry on subsequent playback errors, including failures after a successful start.
-   const onError=()=>{audio.removeEventListener('error',onError);if(activeMediaRetry===token){console.error('[Cassette] Stream failed during playback',hit.videoId,index,audio.error);playWithFallback(hit,(index+1)%MEDIA_SERVERS.length,true,token);}};
-   audio.addEventListener('error',onError,{once:true});
-   token.cleanup=()=>audio.removeEventListener('error',onError);
-   return;
   }catch(e){
-   console.error('[Cassette] Playback attempt failed',MEDIA_SERVERS[index],hit.videoId,e);
-   pipedStatus('✕ '+serverLabel(index)+' — رابط الصوت فشل، التالي...','#ff8e86');
+   console.error('[Cassette Invidious] Search failed',INVIDIOUS_SERVERS[index],e);
+   invidiousStatus('✕ '+serverLabel(index)+' لم يستجب','#ff8e86');
   }
  }
- if(activeMediaRetry===token){pipedStatus('✕ لم يعمل البث عبر أي سيرفر','#ff8e86');msg($('musicMsg'),'تعذر تشغيل هذه الأغنية عبر جميع السيرفرات. قد تكون روابط الصوت محجوبة أو غير متاحة.',true);}
+ throw Error('No available Invidious search server');
 }
-async function runMusicSearch(start=searchServerStart){
+async function runMusicSearch(start=0,automatic=true){
  const q=$('musicQuery').value.trim(),results=$('musicResults'),nonce=++musicSearchNonce;
- activePipedController?.abort();activePipedController=new AbortController();
- if(activeMediaRetry?.cleanup)activeMediaRetry.cleanup();
- activeMediaRetry=null;results.replaceChildren();
+ activeInvidiousController?.abort();activeInvidiousController=new AbortController();
+ results.replaceChildren();
  if(!q){msg($('musicMsg'),'اكتب اسم أغنية أو فنان.',true);return;}
  $('musicLoading').hidden=false;$('musicSearch').disabled=true;$('musicMsg').textContent='';
  try{
-  const term=q+(/خليجي|عود|سعودي|جلسة/.test(q)?'':' خليجي');
-  const {index,hits}=await findMediaServer(term,activePipedController.signal,start);
+  const query=q+(/خليجي|عود|سعودي|جلسة/.test(q)?'':' خليجي');
+  const {index,hits}=await searchInvidious(query,start,activeInvidiousController.signal,automatic);
   if(nonce!==musicSearchNonce)return;
   searchServerStart=index;
-  if(!hits.length){msg($('musicMsg'),'السيرفر يعمل، لكن ما ظهرت نتائج. جرّب بحثًا آخر.');return;}
+  if(!hits.length){msg($('musicMsg'),'ما ظهرت نتائج من هذا السيرفر. جرّب عبارة أخرى أو السيرفر التالي.');return;}
   for(const hit of hits){
+   const id=invidiousId(hit);
    const item=document.createElement('div');item.className='music-hit';
-   const title=document.createElement('strong');title.textContent=hit.title;
-   const artist=document.createElement('small');artist.textContent=hit.artist;
+   const title=document.createElement('strong');title.textContent=hit.title||'بدون عنوان';
+   const artist=document.createElement('small');artist.textContent=hit.author||'';
    const row=document.createElement('div');row.className='row';
    const choose=document.createElement('button');choose.type='button';choose.className='cbtn primary';choose.textContent='📼 معاينة بالكاسيت';
    const listen=document.createElement('button');listen.type='button';listen.className='cbtn';listen.textContent='▶ استماع';
-   async function startPlayback(autoplay){
-    if(activeMediaRetry?.cleanup)activeMediaRetry.cleanup();
-    const token={};activeMediaRetry=token;
-    await playWithFallback(hit,index,autoplay,token);
+   async function selectSong(autoplay){
+    const chosen=++activeMusicChoice;
+    listen.disabled=true;choose.disabled=true;
+    invidiousStatus('⏳ '+serverLabel(index)+' — تجهيز الصوت...','#e0bd70');
+    try{
+     const data=await invidiousJSON(index,'/api/v1/videos/'+encodeURIComponent(id),null,13000);
+     if(data.error)throw Error(String(data.error));
+     const url=invidiousAudio(data.adaptiveFormats,index);
+     if(chosen!==activeMusicChoice)return;
+     $('file').value='';$('fileName').textContent='ملف صوتي، حتى 45 ميجابايت';
+     $('audioUrlIn').value=url;
+     $('titleIn').value=[hit.author,hit.title].filter(Boolean).join(' — ').slice(0,80);
+     $('previewBtn').click();
+     if(!previewActive)throw Error('Cassette preview failed');
+     audio.load();
+     if(autoplay)await audio.play();
+     invidiousStatus('✓ '+serverLabel(index)+' — '+(autoplay?'يعمل':'الصوت جاهز'),'#80d5a5');
+     $('previewMsg').textContent=autoplay?'يتم تشغيل الأغنية في الكاسيت.':'اضغط تشغيل بالكاسيت للاستماع.';
+    }catch(e){
+     console.error('[Cassette Invidious] Audio failed',{server:INVIDIOUS_SERVERS[index],videoId:id,audioError:audio.error?.code},e);
+     invidiousStatus('✕ '+serverLabel(index)+' — فشل تشغيل الصوت','#ff8e86');
+     msg($('musicMsg'),'تعذر تشغيل الأغنية من هذا السيرفر. اضغط «جرّب السيرفر التالي» ثم اختر الأغنية مجددًا.',true);
+     $('previewMsg').textContent='تعذر تشغيل الصوت. ارجع للبحث واضغط «جرّب السيرفر التالي».';
+    }finally{listen.disabled=false;choose.disabled=false;}
    }
-   listen.onclick=()=>startPlayback(true);
-   choose.onclick=()=>startPlayback(false);
+   listen.onclick=()=>selectSong(true);
+   choose.onclick=()=>selectSong(false);
    row.append(listen,choose);item.append(title,artist,row);results.append(item);
   }
-  msg($('musicMsg'),'النتائج جاهزة. عند فشل البث سيُجرّب الكاسيت السيرفر التالي تلقائيًا.');
+  msg($('musicMsg'),'اختر أغنية للاستماع. إذا لم تعمل، اضغط «جرّب السيرفر التالي».');
  }catch(e){
-  if(nonce===musicSearchNonce){console.error('[Cassette] All search servers failed',e);pipedStatus('✕ جميع السيرفرات غير متاحة','#ff8e86');msg($('musicMsg'),'تعذر البحث عبر خوادم Piped وInvidious.',true);}
+  if(nonce===musicSearchNonce){invidiousStatus('✕ السيرفر غير متاح','#ff8e86');msg($('musicMsg'),automatic?'تعذر البحث في سيرفرات Invidious الحالية.':'هذا السيرفر لا يستجيب. اضغط «جرّب السيرفر التالي» مرة أخرى.',true);}
  }finally{if(nonce===musicSearchNonce){$('musicLoading').hidden=true;$('musicSearch').disabled=false;}}
 }
-$('musicSearch').onclick=()=>runMusicSearch(0);
-$('musicNextServer').onclick=()=>runMusicSearch((searchServerStart+1)%MEDIA_SERVERS.length);
-$('musicQuery').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runMusicSearch(0);}});
+$('musicSearch').onclick=()=>runMusicSearch(0,true);
+$('musicNextServer').onclick=()=>runMusicSearch((searchServerStart+1)%INVIDIOUS_SERVERS.length,false);
+$('musicQuery').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();runMusicSearch(0,true);}});
+audio.addEventListener('error',()=>{
+ if(!previewActive)return;
+ console.error('[Cassette Invidious] HTMLAudioElement error',{code:audio.error?.code,src:audio.currentSrc});
+ invidiousStatus('✕ تعذر تشغيل رابط الصوت','#ff8e86');
+ msg($('musicMsg'),'تعذر تشغيل الرابط. ارجع للبحث واضغط «جرّب السيرفر التالي».',true);
+});
 let syncLines=[],syncTimes=[],syncPosition=0;
 function syncDraw(){ $('syncMeta').textContent=(syncPosition+1)+' / '+syncLines.length;$('syncLine').textContent=syncLines[syncPosition]||'اكتملت المزامنة';$('syncNext').textContent=syncLines[syncPosition+1]||'';$('syncTap').disabled=syncPosition>=syncLines.length||!syncAudioReady;}
 $('syncBtn').onclick=()=>{const raw=$('lyr').value.trim();syncLines=raw.split(/\r?\n/).map(x=>x.replace(/\[\d+:\d{2}(?:[.:]\d{1,3})?\]/g,'').trim()).filter(Boolean);if(!syncLines.length){msg($('editMsg'),'اكتب كلمات الأغنية أولاً، كل سطر لحاله.',true);return;}syncTimes=[];syncPosition=0;syncAudioReady=false;$('syncStart').textContent='▶ تشغيل الصوت';$('syncPause').disabled=true;editForm.hidden=true;$('syncBox').hidden=false;syncDraw();syncProgress();};
