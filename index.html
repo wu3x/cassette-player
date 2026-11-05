@@ -550,14 +550,23 @@ async function showEditor(){const {data:{user}}=await db.auth.getUser();if(!user
 pwForm.onsubmit=async e=>{e.preventDefault();msg($('pwMsg'),'جارٍ تسجيل الدخول...');const {error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('pw').value});$('pw').value='';if(error){msg($('pwMsg'),'فشل تسجيل الدخول. تحقق من البريد وكلمة المرور.',true);return;}await showEditor();};
 $('file').onchange=()=>{$('fileName').textContent=$('file').files[0]?.name||'اختيار ملف';if($('file').files.length)$('audioUrlIn').value='';};
 
-// Piped API admin search experiment. Audio links can expire and may be blocked.
-let musicSearchNonce=0,musicListen=null;
-const PIPED_API='https://pipedapi.kavin.rocks';
-async function pipedJSON(url,signal){
- const r=await fetch(url,{signal,headers:{Accept:'application/json'}});
- if(!r.ok)throw Error('Piped HTTP '+r.status);
- return r.json();
-}
+// Piped search with per-search sequential fallback across public instances.
+// Public instances are community operated; inclusion does not imply uptime or trust.
+const PIPED_INSTANCES=[
+ 'https://pipedapi.kavin.rocks',
+ 'https://pipedapi-libre.kavin.rocks',
+ 'https://api.piped.private.coffee',
+ 'https://api.piped.privacydev.net',
+ 'https://pipedapi.palveluntarjoaja.eu',
+ 'https://pipedapi.smnz.de',
+ 'https://pipedapi.moomoo.me',
+ 'https://pipedapi.syncpundit.io',
+ 'https://api-piped.mha.fi',
+ 'https://pipedapi.tokhmi.xyz',
+ 'https://piped-api.privacy.com.de',
+ 'https://api.piped.projectsegfau.lt'
+];
+let musicSearchNonce=0,musicListen=null,activePipedController=null;
 function pipedVideoId(item){
  const url=String(item.url||'');
  const match=url.match(/[?&]v=([A-Za-z0-9_-]{11})/)||url.match(/\/watch\/([A-Za-z0-9_-]{11})/);
@@ -568,20 +577,52 @@ function pipedAudio(streams){
  const safari=candidates.filter(x=>/audio\/(mp4|mpeg|aac)/i.test(x.mimeType||''));
  return (safari.length?safari:candidates).sort((a,b)=>(b.bitrate||0)-(a.bitrate||0))[0]||null;
 }
+async function pipedJSON(base,path,signal,timeoutMs=5500){
+ const controller=new AbortController();
+ const onAbort=()=>controller.abort();
+ signal?.addEventListener('abort',onAbort,{once:true});
+ const timer=setTimeout(()=>controller.abort(),timeoutMs);
+ try{
+  const response=await fetch(base+path,{signal:controller.signal,headers:{Accept:'application/json'}});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  return await response.json();
+ }finally{clearTimeout(timer);signal?.removeEventListener('abort',onAbort);}
+}
+async function pipedSearchWithFallback(query,signal,onAttempt){
+ const path='/search?'+new URLSearchParams({q:query,filter:'videos'});
+ const errors=[];
+ for(let i=0;i<PIPED_INSTANCES.length;i++){
+  if(signal.aborted)throw Error('Search cancelled');
+  const base=PIPED_INSTANCES[i];
+  onAttempt(i+1,PIPED_INSTANCES.length);
+  try{
+   const data=await pipedJSON(base,path,signal);
+   if(!Array.isArray(data.items))throw Error('Invalid search response');
+   return {base,hits:data.items.filter(x=>x.type==='stream'&&pipedVideoId(x)).slice(0,20)};
+  }catch(error){
+   if(signal.aborted)throw error;
+   errors.push(base+': '+error.message);
+  }
+ }
+ console.warn('All Piped instances failed:',errors);
+ throw Error('All Piped instances unavailable');
+}
 $('musicSearch').onclick=async()=>{
  const q=$('musicQuery').value.trim(),results=$('musicResults'),nonce=++musicSearchNonce;
+ activePipedController?.abort();
+ activePipedController=new AbortController();
+ const signal=activePipedController.signal;
  results.replaceChildren();
  if(musicListen){musicListen.pause();musicListen=null;}
  if(!q){msg($('musicMsg'),'اكتب اسم أغنية أو فنان.',true);return;}
  $('musicLoading').hidden=false;$('musicSearch').disabled=true;$('musicMsg').textContent='';
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
  try{
-  const searchTerm=q+( /خليجي|عود|سعودي|جلسة/.test(q)?'':' خليجي');
-  const params=new URLSearchParams({q:searchTerm,filter:'videos'});
-  const data=await pipedJSON(PIPED_API+'/search?'+params,controller.signal);
+  const searchTerm=q+(/خليجي|عود|سعودي|جلسة/.test(q)?'':' خليجي');
+  const {base,hits}=await pipedSearchWithFallback(searchTerm,signal,(current,total)=>{
+   if(nonce===musicSearchNonce)msg($('musicMsg'),'جارٍ تجربة خادم Piped '+current+' من '+total+'...');
+  });
   if(nonce!==musicSearchNonce)return;
-  const hits=(data.items||[]).filter(x=>x.type==='stream'&&pipedVideoId(x)).slice(0,20);
-  if(!hits.length){msg($('musicMsg'),'ما ظهرت نتائج من Piped. جرّب عبارة ثانية أو أعد المحاولة.');return;}
+  if(!hits.length){msg($('musicMsg'),'اتصلنا بخادم Piped لكنه لم يجد نتائج. جرّب بحثًا آخر.');return;}
   for(const hit of hits){
    const id=pipedVideoId(hit);
    const item=document.createElement('div');item.className='music-hit';
@@ -592,22 +633,23 @@ $('musicSearch').onclick=async()=>{
    const listen=document.createElement('button');listen.type='button';listen.className='cbtn';listen.textContent='▶ استماع';
    let streamUrl='',streamAt=0;
    async function resolveStream(){
-    if(streamUrl&&Date.now()-streamAt<90000)return streamUrl;
-    const info=await pipedJSON(PIPED_API+'/streams/'+id,AbortSignal.timeout(12000));
+    if(streamUrl&&Date.now()-streamAt<60000)return streamUrl;
+    // Always resolve using the same instance that supplied these results.
+    const info=await pipedJSON(base,'/streams/'+id,null,12000);
     const stream=pipedAudio(info.audioStreams);
     if(!stream)throw Error('No compatible audio stream');
     streamUrl=stream.url;streamAt=Date.now();return streamUrl;
    }
    listen.onclick=async()=>{
+    if(musicListen&&!musicListen.paused&&musicListen.dataset?.pipedId===id){musicListen.pause();listen.textContent='▶ استماع';return;}
     listen.disabled=true;listen.textContent='جارٍ تجهيز الصوت...';
     try{
      const url=await resolveStream();
      if(musicListen)musicListen.pause();
-     musicListen=new Audio(url);musicListen.preload='none';
+     musicListen=new Audio(url);musicListen.preload='none';musicListen.dataset.pipedId=id;
      await musicListen.play();listen.textContent='⏸ إيقاف';
      musicListen.onended=()=>listen.textContent='▶ استماع';
-     listen.onclick=()=>{if(musicListen&&!musicListen.paused){musicListen.pause();listen.textContent='▶ استماع';}else{streamUrl='';listen.textContent='▶ استماع';}};
-    }catch(e){listen.textContent='▶ استماع';msg($('musicMsg'),'تعذر تشغيل الصوت عبر Piped. قد يكون الخادم محجوبًا أو رابط البث غير صالح.',true);}
+    }catch(e){listen.textContent='▶ استماع';streamUrl='';msg($('musicMsg'),'تعذر تشغيل الصوت من الخادم المختار. روابط Piped قد تكون محجوبة أو مؤقتة.',true);}
     finally{listen.disabled=false;}
    };
    choose.onclick=async()=>{
@@ -618,17 +660,17 @@ $('musicSearch').onclick=async()=>{
      $('file').value='';$('fileName').textContent='ملف صوتي، حتى 45 ميجابايت';
      $('audioUrlIn').value=url;
      $('titleIn').value=[hit.uploaderName,hit.title].filter(Boolean).join(' — ').slice(0,80);
-     msg($('musicMsg'),'هذا رابط بث مؤقت وقد ينتهي أو يتعطل. لا تعتمد عليه للنشر الدائم للزوار؛ المعاينة فقط.');
+     msg($('musicMsg'),'هذا رابط بث مؤقت وقد ينتهي؛ لا تعتمد عليه للنشر الدائم.');
      $('previewBtn').click();
-    }catch(e){msg($('musicMsg'),'تعذر استخراج رابط صوت مناسب لهذه النتيجة.',true);}
+    }catch(e){msg($('musicMsg'),'تعذر جلب رابط الصوت من خادم Piped المختار.',true);}
     finally{choose.disabled=false;choose.textContent='📼 معاينة بالكاسيت';}
    };
    row.append(listen,choose);item.append(title,artist,row);results.append(item);
   }
-  msg($('musicMsg'),'نتائج Piped جاهزة. جرّب الاستماع أو المعاينة؛ روابط البث مؤقتة وغير مضمونة للنشر.');
+  msg($('musicMsg'),'تم البحث عبر خادم Piped متاح. جرّب الاستماع أو المعاينة قبل النشر.');
  }catch(e){
-  if(nonce===musicSearchNonce)msg($('musicMsg'),'تعذر الوصول إلى Piped من المتصفح (قد تكون مشكلة خادم أو CORS). الكاسيت المنشور لم يتغير.',true);
- }finally{clearTimeout(timer);if(nonce===musicSearchNonce){$('musicLoading').hidden=true;$('musicSearch').disabled=false;}}
+  if(nonce===musicSearchNonce)msg($('musicMsg'),'تعذر البحث عبر جميع خوادم Piped المتاحة في القائمة. قد تكون الخوادم متوقفة أو تمنع CORS.',true);
+ }finally{if(nonce===musicSearchNonce){$('musicLoading').hidden=true;$('musicSearch').disabled=false;}}
 };
 $('musicQuery').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('musicSearch').click();}});
 let syncLines=[],syncTimes=[],syncPosition=0;
