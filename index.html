@@ -575,10 +575,27 @@ function pipedVideoId(item){
  return match?.[1]||'';
 }
 function pipedAudio(streams){
- const candidates=(streams||[]).filter(x=>x&&typeof x.url==='string'&&x.url.startsWith('https://')&&/audio\/(mp4|mpeg|aac|ogg|webm)/i.test(x.mimeType||''));
- const safari=candidates.filter(x=>/audio\/(mp4|mpeg|aac)/i.test(x.mimeType||''));
- return (safari.length?safari:candidates).sort((a,b)=>(b.bitrate||0)-(a.bitrate||0))[0]||null;
+ const options=(Array.isArray(streams)?streams:[]).filter(x=>x&&typeof x.url==='string'&&/^https:\/\//i.test(x.url));
+ const supported=options.filter(x=>{
+  const mime=String(x.mimeType||x.mime||'').toLowerCase().split(';')[0];
+  return mime.startsWith('audio/')||x.audioTrackId||/\.(m4a|mp4|mp3|webm|opus)(\?|$)/i.test(x.url);
+ });
+ const ranked=supported.map(x=>{
+  const mime=String(x.mimeType||x.mime||'').toLowerCase();
+  const codec=String(x.codec||x.codecs||'').toLowerCase();
+  const safari=/audio\/(mp4|x-m4a|mpeg|aac)/.test(mime)||/mp4a|aac/.test(codec);
+  const can=audio.canPlayType(mime||'audio/mp4');
+  return {stream:x,score:(safari?1000000:0)+(can==='probably'?200000:can==='maybe'?100000:0)+Number(x.bitrate||0)};
+ }).sort((a,b)=>b.score-a.score);
+ return ranked[0]?.stream||null;
 }
+function pipedPlaybackError(error,stage,extra={}){
+ console.error('[Cassette Piped] '+stage,{name:error?.name,message:error?.message,code:audio.error?.code,networkState:audio.networkState,readyState:audio.readyState,...extra},error);
+ const code=audio.error?.code;
+ const hint=code===4?'صيغة الصوت غير مدعومة أو رابط البث مرفوض.':code===2?'فشل تحميل الصوت من الخادم أو الشبكة.':error?.name==='NotAllowedError'?'Safari منع التشغيل التلقائي؛ اضغط تشغيل في الكاسيت.':'قد يكون رابط البث منتهيًا أو محجوبًا (CORS/403).';
+ msg($('musicMsg'),'تعذر تشغيل الأغنية: '+hint,true);
+}
+
 async function pipedJSON(base,path,signal,timeoutMs=5500){
  const controller=new AbortController();
  const onAbort=()=>controller.abort();
@@ -642,34 +659,36 @@ $('musicSearch').onclick=async()=>{
    async function resolveStream(){
     if(streamUrl&&Date.now()-streamAt<60000)return streamUrl;
     // Always resolve using the same instance that supplied these results.
-    const info=await pipedJSON(base,'/streams/'+id,null,12000);
-    const stream=pipedAudio(info.audioStreams);
-    if(!stream)throw Error('No compatible audio stream');
+    const info=await pipedJSON(base,'/streams/'+encodeURIComponent(id),null,15000);
+    if(info.error||info.message&&(!info.audioStreams||!info.audioStreams.length))throw Error(String(info.error||info.message));
+    const stream=pipedAudio(info.audioStreams||info.audio_streams||[]);
+    if(!stream){console.error('[Cassette Piped] No audio streams',{videoId:id,instance:base,keys:Object.keys(info),streams:info.audioStreams});throw Error('No compatible audio stream');}
     streamUrl=stream.url;streamAt=Date.now();return streamUrl;
    }
+   async function previewInCassette(autoplay){
+    const url=await resolveStream();
+    if(musicListen){musicListen.pause();musicListen=null;}
+    $('file').value='';$('fileName').textContent='ملف صوتي، حتى 45 ميجابايت';
+    $('audioUrlIn').value=url;
+    $('titleIn').value=[hit.uploaderName,hit.title].filter(Boolean).join(' — ').slice(0,80);
+    $('previewBtn').click();
+    if(!previewActive||audio.src!==url)throw Error('Cassette preview could not be opened');
+    audio.load();
+    if(autoplay){
+     try{await audio.play();}
+     catch(e){pipedPlaybackError(e,'audio.play()',{videoId:id,instance:base,urlHost:(new URL(url)).hostname});}
+    }else $('previewMsg').textContent='اضغط تشغيل على الكاسيت للاستماع. رابط البث مؤقت.';
+   }
    listen.onclick=async()=>{
-    if(musicListen&&!musicListen.paused&&musicListen.dataset?.pipedId===id){musicListen.pause();listen.textContent='▶ استماع';return;}
     listen.disabled=true;listen.textContent='جارٍ تجهيز الصوت...';
-    try{
-     const url=await resolveStream();
-     if(musicListen)musicListen.pause();
-     musicListen=new Audio(url);musicListen.preload='none';musicListen.dataset.pipedId=id;
-     await musicListen.play();listen.textContent='⏸ إيقاف';
-     musicListen.onended=()=>listen.textContent='▶ استماع';
-    }catch(e){listen.textContent='▶ استماع';streamUrl='';msg($('musicMsg'),'تعذر تشغيل الصوت من الخادم المختار. روابط Piped قد تكون محجوبة أو مؤقتة.',true);}
-    finally{listen.disabled=false;}
+    try{await previewInCassette(true);}
+    catch(e){pipedPlaybackError(e,'listen /streams',{videoId:id,instance:base});}
+    finally{listen.disabled=false;listen.textContent='▶ استماع';}
    };
    choose.onclick=async()=>{
     choose.disabled=true;choose.textContent='جارٍ تجهيز المعاينة...';
-    try{
-     const url=await resolveStream();
-     if(musicListen){musicListen.pause();musicListen=null;}
-     $('file').value='';$('fileName').textContent='ملف صوتي، حتى 45 ميجابايت';
-     $('audioUrlIn').value=url;
-     $('titleIn').value=[hit.uploaderName,hit.title].filter(Boolean).join(' — ').slice(0,80);
-     msg($('musicMsg'),'هذا رابط بث مؤقت وقد ينتهي؛ لا تعتمد عليه للنشر الدائم.');
-     $('previewBtn').click();
-    }catch(e){msg($('musicMsg'),'تعذر جلب رابط الصوت من خادم Piped المختار.',true);}
+    try{await previewInCassette(false);}
+    catch(e){pipedPlaybackError(e,'preview /streams',{videoId:id,instance:base});}
     finally{choose.disabled=false;choose.textContent='📼 معاينة بالكاسيت';}
    };
    row.append(listen,choose);item.append(title,artist,row);results.append(item);
