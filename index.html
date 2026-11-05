@@ -513,7 +513,7 @@ function renderLyrics(t){
 }
 function duration(){return audio.duration||0;}
 function currentTime(){return audio.currentTime||0;}
-function paint(){let d=duration(),t=currentTime(),p=d>0&&isFinite(d)?Math.min(1,t/d):0;seek.value=Math.round(p*1000);seek.style.setProperty('--pp',p*100+'%');tCur.textContent=fmt(t);tDur.textContent=fmt(d);$('packL').setAttribute('r',(47-9*p).toFixed(2));$('packR').setAttribute('r',(38+9*p).toFixed(2));renderLyrics(t);}
+function paint(){if(seekDragging)return;let d=duration(),t=currentTime(),p=d>0&&isFinite(d)?Math.min(1,t/d):0;seek.value=Math.round(p*1000);seek.style.setProperty('--pp',p*100+'%');tCur.textContent=fmt(t);tDur.textContent=fmt(d);$('packL').setAttribute('r',(47-9*p).toFixed(2));$('packR').setAttribute('r',(38+9*p).toFixed(2));renderLyrics(t);}
 function setPlaying(v){isPlaying=v;deck.classList.toggle('playing',v);$('icPlay').hidden=v;$('icPause').hidden=!v;}
 function apply(row,{temporary=false}={}){if(!temporary)settings=row||{};const display=row||{};studioPaint(temporary?(display.studio||studio):studioFromRow(display));audio.pause();setPlaying(false);const url=String(display.audio_url||'').trim();if(url){audio.src=url;audio.load();}else{audio.removeAttribute('src');audio.load();}const title=String(display.title||'').trim();nameEl.textContent=title||'لا يوجد شريط بعد';fmtEl.textContent=url?(FMT[display.mime]||'AUDIO'):'—';$('play').disabled=!url;$('restart').disabled=!url;seek.disabled=!url;lyrics=Array.isArray(display.lyrics)?display.lyrics:parseLrc(display.lyrics);$('lyrics').hidden=!lyrics.length;if(!lyrics.length){$('lyrics').classList.remove('before-first');$('lyPrev').textContent='';$('lyCur').textContent='';$('lyNext').textContent='';}lastIndex=-2;paint();}
 // Read the public cassette independently of the administrator's login session.
@@ -541,7 +541,32 @@ async function refresh(){
 $('play').onclick=async()=>{if(audio.paused){try{await audio.play();}catch(e){console.error('Audio playback failed:',e);}}else audio.pause();};
 $('restart').onclick=()=>{audio.currentTime=0;paint();};
 $('vol').onclick=()=>{audio.muted=!audio.muted;const muted=audio.muted;$('icVolOn').hidden=muted;$('icVolOff').hidden=!muted;};
-seek.oninput=()=>{const t=duration()*seek.value/1000;if(isFinite(t)){audio.currentTime=t;}paint();};
+let seekDragging=false;
+function commitSeek(){
+ const d=duration(),t=d*Number(seek.value)/1000;
+ if(!Number.isFinite(d)||d<=0||!Number.isFinite(t))return;
+ try{
+  if(audio.seekable.length){
+   let target=t,found=false;
+   for(let i=0;i<audio.seekable.length;i++){
+    const a=audio.seekable.start(i),b=audio.seekable.end(i);
+    if(t>=a&&t<=b){found=true;break;}
+    if(t>b){target=b;found=true;}
+   }
+   if(!found)console.warn('[Cassette] Stream has no seekable range for target',t);
+   audio.currentTime=target;
+  }else{
+   audio.currentTime=t;
+   console.warn('[Cassette] No seekable ranges reported by source; server may not support byte-range requests.');
+  }
+ }catch(e){console.error('[Cassette] Seek failed',e);}
+ seekDragging=false;paint();
+}
+seek.addEventListener('pointerdown',()=>{seekDragging=true;});
+seek.oninput=()=>{seekDragging=true;const d=duration(),t=d*Number(seek.value)/1000;if(Number.isFinite(t))tCur.textContent=fmt(t);seek.style.setProperty('--pp',(Number(seek.value)/10)+'%');};
+seek.onchange=commitSeek;
+seek.addEventListener('pointerup',commitSeek);
+audio.addEventListener('seeked',paint);
 audio.addEventListener('play',()=>setPlaying(true));audio.addEventListener('pause',()=>setPlaying(false));audio.addEventListener('ended',()=>{audio.currentTime=0;setPlaying(false);});audio.addEventListener('timeupdate',paint);audio.addEventListener('loadedmetadata',paint);
 const sheet=$('sheet'),pwForm=$('pwForm'),editForm=$('editForm');
 function msg(el,s,bad=false){el.textContent=s;el.className='msg'+(bad?' bad':' good');}
