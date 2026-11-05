@@ -557,10 +557,19 @@ $('musicSearch').onclick=()=>{
  const q=$('musicQuery').value.trim(),results=$('musicResults');
  results.replaceChildren();
  if(!q){msg($('musicMsg'),'اكتب اسم الأغنية أو الفنان أولاً.',true);return;}
+ // Adapted from sm3ha/server/catalog.ts: normalize Arabic only as an optional search variant.
+ // Keep the original query intact; platforms may index the exact spelling better.
+ const normalized=q.toLocaleLowerCase('ar').normalize('NFKD')
+  .replace(/[\u064B-\u065F\u0670]/g,'').replace(/[إأآا]/g,'ا')
+  .replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/\s+/g,' ').trim();
  const sources=[
   {label:'البحث في YouTube Music',url:'https://music.youtube.com/search?q='+encodeURIComponent(q)},
   {label:'البحث في SoundCloud',url:'https://soundcloud.com/search?q='+encodeURIComponent(q)}
  ];
+ if(normalized&&normalized!==q.toLocaleLowerCase('ar')){
+  sources.push({label:'بحث عربي بديل في YouTube Music',url:'https://music.youtube.com/search?q='+encodeURIComponent(normalized)});
+  sources.push({label:'بحث عربي بديل في SoundCloud',url:'https://soundcloud.com/search?q='+encodeURIComponent(normalized)});
+ }
  for(const source of sources){
   const link=document.createElement('a');
   link.className='cbtn primary';link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=source.label;
